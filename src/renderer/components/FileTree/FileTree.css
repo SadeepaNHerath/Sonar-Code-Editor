@@ -6,10 +6,11 @@
   color: var(--text-secondary);
   padding-top: 41px;
   container-type: inline-size;
+  font-family: 'Segoe WPC', 'Segoe UI', sans-serif;
 }
 
 .tree-header {
-  padding: 16px;
+  padding: 8px 16px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -80,7 +81,7 @@
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 8px 0;
+  padding: 2px 0;
 }
 
 .tree-node-wrapper {
@@ -90,14 +91,14 @@
 .tree-node {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 16px;
+  gap: 4px;
+  padding: 1px 8px;
   cursor: pointer;
   user-select: none;
   font-size: 13px;
   transition: background 0.1s;
   color: var(--text-secondary);
-  min-height: 28px;
+  min-height: 22px;
 }
 
 .tree-node:hover {
@@ -165,25 +166,33 @@
   background: var(--bg-primary);
   border: 1px solid var(--border);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-  border-radius: 8px;
-  padding: 6px 0;
-  min-width: 160px;
-  z-index: 1000;
+  border-radius: 5px;
+  padding: 4px 0;
+  min-width: 180px;
+  z-index: 999999;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  color: var(--text-primary);
 }
 
 .context-menu-item {
-  padding: 8px 16px;
+  padding: 6px 2em 6px 2em;
   cursor: pointer;
   font-size: 13px;
-  color: var(--text-primary);
   display: flex;
   align-items: center;
   gap: 8px;
+  user-select: none;
 }
 
 .context-menu-item:hover {
   background: var(--accent);
   color: white;
+}
+
+.context-menu-separator {
+  height: 1px;
+  background-color: var(--border);
+  margin: 4px 8px;
 }
 
 .context-menu-item.danger:hover {

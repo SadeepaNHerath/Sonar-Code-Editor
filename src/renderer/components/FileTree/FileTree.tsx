@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { ChevronRight, ChevronDown, Folder, File, FileCode2, FileJson, FileText, FileImage, Terminal, Database, ShieldAlert, FilePlus, FolderPlus } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { ChevronRight, ChevronDown, Folder, File, FileCode2, FileJson, FileText, FileImage, Terminal, Database, ShieldAlert, FilePlus2, FolderPlus } from 'lucide-react';
 import { FileNode } from '../../../shared/types';
 import './FileTree.css';
 
@@ -66,7 +67,7 @@ function InlineCreateInput({ type, depth, onSubmit, onCancel }: InlineCreateInpu
   };
 
   return (
-    <div className="tree-node inline-create" style={{ paddingLeft: `${depth * 16 + 8}px` }}>
+    <div className="tree-node inline-create" style={{ paddingLeft: `${depth * 8 + 8}px` }}>
       <span className="expand-icon"></span>
       <span className="file-icon">{type === 'folder' ? <Folder size={14} color="var(--accent)" /> : <File size={14} />}</span>
       <input
@@ -97,9 +98,11 @@ interface FileTreeNodeProps {
   selectedFolder: string | null;
   onSelectFolder: (path: string) => void;
   onFileOpened: (path: string, name: string) => void;
+  onFileDeleted: (path: string, type: 'file' | 'directory') => void;
+  onFileRenamed?: (oldPath: string, newPath: string) => void;
 }
 
-function FileTreeNode({ node, depth, activeFilePath, onFileClick, onRefresh, workspaceRoot, creatingItem, onSetCreating, selectedFolder, onSelectFolder, onFileOpened }: FileTreeNodeProps) {
+function FileTreeNode({ node, depth, activeFilePath, onFileClick, onRefresh, workspaceRoot, creatingItem, onSetCreating, selectedFolder, onSelectFolder, onFileOpened, onFileDeleted, onFileRenamed }: FileTreeNodeProps) {
   const [expanded, setExpanded] = useState(depth === 0);
   const [children, setChildren] = useState<FileNode[]>(node.children || []);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
@@ -132,6 +135,7 @@ function FileTreeNode({ node, depth, activeFilePath, onFileClick, onRefresh, wor
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    document.dispatchEvent(new CustomEvent('close-context-menus'));
     setContextMenu({ x: e.clientX, y: e.clientY });
   };
 
@@ -168,6 +172,7 @@ function FileTreeNode({ node, depth, activeFilePath, onFileClick, onRefresh, wor
     closeContextMenu();
     if (confirm(`Delete "${node.name}"?`)) {
       await window.electronAPI.fs.deleteItem(node.path);
+      onFileDeleted(node.path, node.type);
       onRefresh();
     }
   };
@@ -181,8 +186,10 @@ function FileTreeNode({ node, depth, activeFilePath, onFileClick, onRefresh, wor
   const commitRename = async () => {
     setRenaming(false);
     if (newName !== node.name && newName.trim()) {
-      const dir = node.path.split('/').slice(0, -1).join('/');
-      await window.electronAPI.fs.renameItem(node.path, `${dir}/${newName.trim()}`);
+      const dir = node.path.split(/[\\/]/).slice(0, -1).join('/');
+      const newPath = `${dir}/${newName.trim()}`;
+      await window.electronAPI.fs.renameItem(node.path, newPath);
+      onFileRenamed?.(node.path, newPath);
       onRefresh();
     }
   };
@@ -191,7 +198,11 @@ function FileTreeNode({ node, depth, activeFilePath, onFileClick, onRefresh, wor
     if (contextMenu) {
       const handler = () => closeContextMenu();
       window.addEventListener('click', handler);
-      return () => window.removeEventListener('click', handler);
+      document.addEventListener('close-context-menus', handler as EventListener);
+      return () => {
+        window.removeEventListener('click', handler);
+        document.removeEventListener('close-context-menus', handler as EventListener);
+      };
     }
   }, [contextMenu]);
 
@@ -202,7 +213,7 @@ function FileTreeNode({ node, depth, activeFilePath, onFileClick, onRefresh, wor
     <div className="tree-node-wrapper">
       <div
         className={`tree-node ${isActive ? 'active' : ''} ${isSelected ? 'selected-folder' : ''}`}
-        style={{ paddingLeft: `${depth * 16 + 8}px` }}
+        style={{ paddingLeft: `${depth * 8 + 8}px` }}
         onClick={(e) => {
           e.stopPropagation();
           if (node.type === 'file') onFileClick(node.path, node.name);
@@ -236,13 +247,16 @@ function FileTreeNode({ node, depth, activeFilePath, onFileClick, onRefresh, wor
         )}
       </div>
 
-      {contextMenu && (
+      {contextMenu && createPortal(
         <div className="context-menu" style={{ top: contextMenu.y, left: contextMenu.x }}>
           <div className="context-menu-item" onClick={handleNewFile}>New File</div>
           <div className="context-menu-item" onClick={handleNewFolder}>New Folder</div>
+          <div className="context-menu-separator" />
           <div className="context-menu-item" onClick={startRename}>Rename</div>
+          <div className="context-menu-separator" />
           <div className="context-menu-item danger" onClick={handleDelete}>Delete</div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {expanded && node.type === 'directory' && (
@@ -269,6 +283,8 @@ function FileTreeNode({ node, depth, activeFilePath, onFileClick, onRefresh, wor
               selectedFolder={selectedFolder}
               onSelectFolder={onSelectFolder}
               onFileOpened={onFileOpened}
+              onFileDeleted={onFileDeleted}
+              onFileRenamed={onFileRenamed}
             />
           ))}
         </div>
@@ -286,12 +302,15 @@ interface FileTreeProps {
   onAutoSaveChange: (autoSave: boolean) => void;
   onFileOpened?: (path: string, name: string) => void;
   newFileTrigger?: number;
+  onFileDeleted?: (path: string, type: 'file' | 'directory') => void;
+  onFileRenamed?: (oldPath: string, newPath: string) => void;
 }
 
-export default function FileTree({ workspaceRoot, onOpenFolder, onFileClick, activeFilePath, autoSave, onAutoSaveChange, onFileOpened, newFileTrigger }: FileTreeProps) {
+export default function FileTree({ workspaceRoot, onOpenFolder, onFileClick, activeFilePath, autoSave, onAutoSaveChange, onFileOpened, newFileTrigger, onFileDeleted, onFileRenamed }: FileTreeProps) {
   const [rootNodes, setRootNodes] = useState<FileNode[]>([]);
   const [creatingItem, setCreatingItem] = useState<CreatingItem | null>(null);
   const [selectedFolder, setSelectedFolder] = useState<string | null>(workspaceRoot);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -299,6 +318,18 @@ export default function FileTree({ workspaceRoot, onOpenFolder, onFileClick, act
     setCreatingItem({ type: 'file', parentPath: selectedFolder ?? workspaceRoot });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [newFileTrigger]);
+
+  useEffect(() => {
+    if (contextMenu) {
+      const handler = () => setContextMenu(null);
+      window.addEventListener('click', handler);
+      document.addEventListener('close-context-menus', handler as EventListener);
+      return () => {
+        window.removeEventListener('click', handler);
+        document.removeEventListener('close-context-menus', handler as EventListener);
+      };
+    }
+  }, [contextMenu]);
 
   useEffect(() => {
     const handleMouseDown = (e: MouseEvent) => {
@@ -355,7 +386,19 @@ export default function FileTree({ workspaceRoot, onOpenFolder, onFileClick, act
   }
 
   return (
-    <div ref={panelRef} className="file-tree-panel" onClick={() => setSelectedFolder(workspaceRoot)}>
+    <div 
+      ref={panelRef} 
+      className="file-tree-panel" 
+      onClick={() => setSelectedFolder(workspaceRoot)}
+      onContextMenu={(e) => {
+        // Prevent default browser context menu and only show root context if clicking dead space
+        if ((e.target as HTMLElement).closest('.tree-node')) return;
+        e.preventDefault();
+        document.dispatchEvent(new CustomEvent('close-context-menus'));
+        setContextMenu({ x: e.clientX, y: e.clientY });
+        setSelectedFolder(workspaceRoot);
+      }}
+    >
       <div className="tree-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '4px', overflow: 'hidden' }}>
         <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginRight: '8px' }}>Explorer</span>
         <div className="tree-actions" style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0, flexWrap: 'wrap' }}>
@@ -364,14 +407,14 @@ export default function FileTree({ workspaceRoot, onOpenFolder, onFileClick, act
             title="New File"
             onClick={(e) => { e.stopPropagation(); setCreatingItem({ type: 'file', parentPath: selectedFolder ?? workspaceRoot }); }}
           >
-            <FilePlus size={14} />
+            <FilePlus2 size={18} />
           </button>
           <button
             className="tree-action-btn"
             title="New Folder"
             onClick={(e) => { e.stopPropagation(); setCreatingItem({ type: 'folder', parentPath: selectedFolder ?? workspaceRoot }); }}
           >
-            <FolderPlus size={14} />
+            <FolderPlus size={18} />
           </button>
         </div>
       </div>
@@ -410,9 +453,19 @@ export default function FileTree({ workspaceRoot, onOpenFolder, onFileClick, act
             selectedFolder={selectedFolder}
             onSelectFolder={setSelectedFolder}
             onFileOpened={onFileOpened ?? (() => {})}
+            onFileDeleted={onFileDeleted ?? (() => {})}
+            onFileRenamed={onFileRenamed}
           />
         ))}
       </div>
+
+      {contextMenu && createPortal(
+        <div className="context-menu" style={{ top: contextMenu.y, left: contextMenu.x }}>
+          <div className="context-menu-item" onClick={() => { setCreatingItem({ type: 'file', parentPath: workspaceRoot }); setContextMenu(null); }}>New File</div>
+          <div className="context-menu-item" onClick={() => { setCreatingItem({ type: 'folder', parentPath: workspaceRoot }); setContextMenu(null); }}>New Folder</div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }

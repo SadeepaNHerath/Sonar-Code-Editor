@@ -198,6 +198,53 @@ export default function IDE() {
     ));
   }, []);
 
+  const handleFileDeleted = useCallback((deletedPath: string, type: 'file' | 'directory') => {
+    setTabs((prev) => {
+      const next = prev.filter((t) => {
+        if (type === 'directory') {
+          return !t.path.startsWith(deletedPath + '/') && !t.path.startsWith(deletedPath + '\\') && t.path !== deletedPath;
+        }
+        return t.path !== deletedPath;
+      });
+      if (next.length < prev.length) {
+        setActiveTabPath((current) => {
+          if (!current) return null;
+          const stillOpen = next.find((t) => t.path === current);
+          if (stillOpen) return current;
+          return next[next.length - 1]?.path || null;
+        });
+      }
+      return next;
+    });
+  }, []);
+
+  const handleFileRenamed = useCallback((oldPath: string, newPath: string) => {
+    setTabs((prev) => {
+      let updated = false;
+      const next = prev.map((t) => {
+        // If it was a directory renamed, we should update paths inside it
+        if (t.path === oldPath || t.path.startsWith(oldPath + '/') || t.path.startsWith(oldPath + '\\')) {
+          updated = true;
+          const newFilePath = newPath + t.path.slice(oldPath.length);
+          const newName = newFilePath.split(/[\\/]/).pop() || '';
+          return { ...t, path: newFilePath, name: newName };
+        }
+        return t;
+      });
+      
+      if (updated) {
+        setActiveTabPath((current) => {
+          if (!current) return null;
+          if (current === oldPath || current.startsWith(oldPath + '/') || current.startsWith(oldPath + '\\')) {
+            return newPath + current.slice(oldPath.length);
+          }
+          return current;
+        });
+      }
+      return next;
+    });
+  }, []);
+
   const openFolder = useCallback(async () => {
     const result = await window.electronAPI.fs.openFolderDialog();
     if (result) {
@@ -292,6 +339,8 @@ export default function IDE() {
                   onAutoSaveChange={setAutoSave}
                   onFileOpened={openFile}
                   newFileTrigger={newFileTrigger}
+                  onFileDeleted={handleFileDeleted}
+                  onFileRenamed={handleFileRenamed}
                 />
               </Panel>
               <PanelResizeHandle className="resize-handle" />
