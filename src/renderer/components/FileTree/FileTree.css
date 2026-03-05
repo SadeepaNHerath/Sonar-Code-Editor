@@ -6,11 +6,12 @@
   color: var(--text-secondary);
   padding-top: 41px;
   container-type: inline-size;
-  font-family: 'Segoe WPC', 'Segoe UI', sans-serif;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
 .platform-windows .file-tree-panel {
   padding-top: 0;
+  font-family: 'Segoe WPC', 'Segoe UI', sans-serif;
 }
 
 .tree-header {
@@ -85,6 +86,10 @@
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
+  padding: 4px 0;
+}
+
+.platform-windows .tree-content {
   padding: 2px 0;
 }
 
@@ -95,13 +100,19 @@
 .tree-node {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 1px 8px;
+  gap: 6px;
+  padding: 3px 12px;
   cursor: pointer;
   user-select: none;
   font-size: 13px;
   transition: background 0.1s;
   color: var(--text-secondary);
+  min-height: 26px;
+}
+
+.platform-windows .tree-node {
+  gap: 4px;
+  padding: 1px 8px;
   min-height: 22px;
 }
 

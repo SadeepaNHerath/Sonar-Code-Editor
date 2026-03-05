@@ -122,7 +122,7 @@ export default function IDE() {
   }, [tabs, autoSave, hotReload]);
 
   const toggleTheme = useCallback(() => {
-    setTheme(prev => prev === 'dark' ? 'light' : prev === 'light' ? 'system' : 'dark');
+    setTheme(prev => prev === 'dark' ? 'light' : 'dark');
   }, []);
 
   useMonitoring(user, isOnline, activeTabPath || '');

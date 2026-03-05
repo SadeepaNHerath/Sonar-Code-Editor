@@ -122,7 +122,7 @@ export default function ActivityBar({
         </button>
 
         <button className="activity-action" onClick={onToggleTheme} title={`Theme: ${theme.charAt(0).toUpperCase() + theme.slice(1)}`}>
-          {theme === 'dark' ? <Moon size={22} strokeWidth={1.5} /> : theme === 'light' ? <Sun size={22} strokeWidth={1.5} /> : <Monitor size={22} strokeWidth={1.5} />}
+          {theme === 'dark' ? <Moon size={22} strokeWidth={1.5} /> : <Sun size={22} strokeWidth={1.5} />}
         </button>
 
         <div className="user-profile-container" title={`Team: ${teamName} (${isOnline ? 'Online' : 'Offline'})`}>
