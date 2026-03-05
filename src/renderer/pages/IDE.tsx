@@ -54,6 +54,16 @@ export default function IDE() {
   const [newFileTrigger, setNewFileTrigger] = useState(0);
 
   useEffect(() => {
+    // Add platform class to body for OS-specific styling
+    const platform = window.navigator.userAgent.toLowerCase();
+    if (platform.includes('win')) {
+      document.body.classList.add('platform-windows');
+    } else {
+      document.body.classList.add('platform-mac');
+    }
+  }, []);
+
+  useEffect(() => {
     let activeTheme = theme;
     if (theme === 'system') {
       activeTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';

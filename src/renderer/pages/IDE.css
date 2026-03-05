@@ -21,6 +21,10 @@
   border-bottom: 1px solid var(--border);
 }
 
+.platform-windows .traffic-light-bg {
+  display: none;
+}
+
 .ide-body {
   flex: 1;
   overflow: hidden;
