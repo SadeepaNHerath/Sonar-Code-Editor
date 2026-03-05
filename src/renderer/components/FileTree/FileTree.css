@@ -4,7 +4,7 @@
   display: flex;
   flex-direction: column;
   color: var(--text-secondary);
-  padding-top: 41px;
+  padding-top: 36px;
   container-type: inline-size;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
 }
@@ -44,6 +44,7 @@
 .tree-actions {
   display: flex;
   gap: 8px;
+  min-height: 22px;
 }
 
 .icon-btn {

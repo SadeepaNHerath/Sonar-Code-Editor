@@ -39,6 +39,40 @@ function readDirectoryRecursive(dirPath: string, deep = false): FileNode[] {
     });
 }
 
+function searchFilesRecursive(dirPath: string, query: string, results: any[]) {
+  try {
+    const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+      const fullPath = path.join(dirPath, entry.name);
+      if (entry.isDirectory()) {
+        searchFilesRecursive(fullPath, query, results);
+      } else {
+        const ext = getExtension(entry.name);
+        if (['png', 'jpg', 'jpeg', 'gif', 'bmp', 'svg', 'webp', 'ico'].includes(ext)) continue;
+        try {
+          const content = fs.readFileSync(fullPath, 'utf-8');
+          const lines = content.split('\n');
+          for (let i = 0; i < lines.length; i++) {
+            if (lines[i].toLowerCase().includes(query.toLowerCase())) {
+              results.push({
+                path: fullPath,
+                name: entry.name,
+                line: i + 1,
+                text: lines[i].trim()
+              });
+            }
+          }
+        } catch (e) {
+          // ignore read errors
+        }
+      }
+    }
+  } catch (e) {
+    // ignore dir errors
+  }
+}
+
 export function registerFsHandlers(ipcMain: IpcMain, dialog: Dialog): void {
   ipcMain.handle(IPC_CHANNELS.FS_READ_DIR, async (_event, dirPath: string) => {
     try {
@@ -115,6 +149,13 @@ export function registerFsHandlers(ipcMain: IpcMain, dialog: Dialog): void {
     } catch (err) {
       throw new Error(`Failed to rename item: ${(err as Error).message}`);
     }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.FS_SEARCH, async (_event, dirPath: string, query: string) => {
+    const results: any[] = [];
+    if (!dirPath || !query) return results;
+    searchFilesRecursive(dirPath, query, results);
+    return results;
   });
 
   ipcMain.handle(IPC_CHANNELS.FS_OPEN_FOLDER_DIALOG, async (event) => {

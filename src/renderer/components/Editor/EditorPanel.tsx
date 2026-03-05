@@ -1,9 +1,22 @@
-import React, { useRef } from 'react';
-import MonacoEditor, { type OnMount } from '@monaco-editor/react';
-import { FileCode2, X, Monitor, FileJson, FileText, FileImage, Terminal, Database, ShieldAlert, File } from 'lucide-react';
-import { OpenTab } from '../../pages/IDE';
-import PreviewPanel from '../Preview/PreviewPanel';
-import './EditorPanel.css';
+import React, { useRef } from "react";
+import MonacoEditor, { type OnMount } from "@monaco-editor/react";
+import {
+  FileCode2,
+  X,
+  Monitor,
+  FileJson,
+  FileText,
+  FileImage,
+  Terminal,
+  Database,
+  ShieldAlert,
+  File,
+  FolderOpen,
+  Code2,
+} from "lucide-react";
+import { OpenTab } from "../../pages/IDE";
+import PreviewPanel from "../Preview/PreviewPanel";
+import "./EditorPanel.css";
 
 interface EditorPanelProps {
   tabs: OpenTab[];
@@ -14,6 +27,7 @@ interface EditorPanelProps {
   onContentChange: (path: string, content: string) => void;
   onSave: () => void;
   workspaceRoot: string | null;
+  onOpenFolder?: () => void;
   theme?: string;
 }
 
@@ -21,60 +35,63 @@ const EDITOR_OPTIONS = {
   suggestOnTriggerCharacters: false,
   quickSuggestions: false,
   parameterHints: { enabled: false },
-  wordBasedSuggestions: 'currentDocument' as const,
-  acceptSuggestionOnEnter: 'off' as const,
-  tabCompletion: 'off' as const,
-  snippetSuggestions: 'none' as const,
+  wordBasedSuggestions: "currentDocument" as const,
+  acceptSuggestionOnEnter: "off" as const,
+  tabCompletion: "off" as const,
+  snippetSuggestions: "none" as const,
   codeLens: false,
   minimap: { enabled: true },
   automaticLayout: true,
   fontSize: 14,
   lineHeight: 22,
-  fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace",
+  fontFamily:
+    "'JetBrains Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace",
   fontLigatures: true,
   scrollBeyondLastLine: false,
-  renderWhitespace: 'none' as const,
-  cursorBlinking: 'smooth' as const,
+  renderWhitespace: "none" as const,
+  cursorBlinking: "smooth" as const,
   smoothScrolling: true,
   padding: { top: 12 },
-  autoClosingBrackets: 'always' as const,
-  autoClosingQuotes: 'always' as const,
-  autoSurround: 'languageDefined' as const,
-  autoClosingOvertype: 'always' as const,
+  autoClosingBrackets: "always" as const,
+  autoClosingQuotes: "always" as const,
+  autoSurround: "languageDefined" as const,
+  autoClosingOvertype: "always" as const,
 };
 
 function getTabIcon(tab: OpenTab) {
-  if (tab.type === 'preview') return <Monitor size={14} className="tab-icon" color="#3b82f6" />;
-  if (tab.type === 'image') return <FileImage size={14} className="tab-icon" color="#8b5cf6" />;
+  if (tab.type === "preview")
+    return <Monitor size={14} className="tab-icon" color="#3b82f6" />;
+  if (tab.type === "image")
+    return <FileImage size={14} className="tab-icon" color="#8b5cf6" />;
 
-  const ext = tab.name.split('.').pop()?.toLowerCase() || '';
+  const ext = tab.name.split(".").pop()?.toLowerCase() || "";
   switch (ext) {
-    case 'js':
-    case 'jsx':
-    case 'ts':
-    case 'tsx':
+    case "js":
+    case "jsx":
+    case "ts":
+    case "tsx":
       return <FileCode2 size={14} className="tab-icon" color="#eab308" />;
-    case 'json':
+    case "json":
       return <FileJson size={14} className="tab-icon" color="#22c55e" />;
-    case 'html':
+    case "html":
       return <FileCode2 size={14} className="tab-icon" color="#ef4444" />;
-    case 'css':
+    case "css":
       return <FileCode2 size={14} className="tab-icon" color="#3b82f6" />;
-    case 'md':
+    case "md":
       return <FileText size={14} className="tab-icon" color="#a1a1aa" />;
-    case 'png':
-    case 'jpg':
-    case 'svg':
-    case 'jpeg':
-    case 'ico':
-    case 'webp':
+    case "png":
+    case "jpg":
+    case "svg":
+    case "jpeg":
+    case "ico":
+    case "webp":
       return <FileImage size={14} className="tab-icon" color="#8b5cf6" />;
-    case 'sh':
-    case 'bash':
+    case "sh":
+    case "bash":
       return <Terminal size={14} className="tab-icon" color="#10b981" />;
-    case 'sql':
+    case "sql":
       return <Database size={14} className="tab-icon" color="#f97316" />;
-    case 'env':
+    case "env":
       return <ShieldAlert size={14} className="tab-icon" color="#eab308" />;
     default:
       return <File size={14} className="tab-icon" color="var(--text-muted)" />;
@@ -82,7 +99,16 @@ function getTabIcon(tab: OpenTab) {
 }
 
 export default function EditorPanel({
-  tabs, activeTabPath, onTabClick, onTabDoubleClick, onTabClose, onContentChange, onSave, workspaceRoot, theme = 'dark'
+  tabs,
+  activeTabPath,
+  onTabClick,
+  onTabDoubleClick,
+  onTabClose,
+  onContentChange,
+  onSave,
+  workspaceRoot,
+  onOpenFolder,
+  theme = "dark",
 }: EditorPanelProps) {
   const activeTab = tabs.find((t) => t.path === activeTabPath);
   const editorRef = useRef<any>(null);
@@ -92,11 +118,11 @@ export default function EditorPanel({
 
     // Enable auto-closing HTML tags via linked editing
     monaco.languages.html?.htmlDefaults?.setOptions?.({
-      format: { contentUnformatted: '' },
+      format: { contentUnformatted: "" },
     });
 
     // For HTML-like languages, auto-insert closing tag when typing '>'
-    const htmlLanguages = ['html', 'xml', 'php', 'handlebars', 'razor'];
+    const htmlLanguages = ["html", "xml", "php", "handlebars", "razor"];
     editor.onDidChangeModelContent((e) => {
       const model = editor.getModel();
       if (!model) return;
@@ -104,25 +130,39 @@ export default function EditorPanel({
       if (!htmlLanguages.includes(lang)) return;
 
       for (const change of e.changes) {
-        if (change.text === '>') {
+        if (change.text === ">") {
           const position = editor.getPosition();
           if (!position) return;
           const lineContent = model.getLineContent(position.lineNumber);
           const beforeCursor = lineContent.substring(0, position.column - 1);
 
           // Match an opening tag (not self-closing, not a closing tag)
-          const tagMatch = beforeCursor.match(/<([a-zA-Z][a-zA-Z0-9-]*)\b[^/]*$/);
+          const tagMatch = beforeCursor.match(
+            /<([a-zA-Z][a-zA-Z0-9-]*)\b[^/]*$/,
+          );
           if (tagMatch) {
             const tagName = tagMatch[1];
             // Skip void/self-closing HTML elements
             const voidElements = [
-              'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input',
-              'link', 'meta', 'param', 'source', 'track', 'wbr',
+              "area",
+              "base",
+              "br",
+              "col",
+              "embed",
+              "hr",
+              "img",
+              "input",
+              "link",
+              "meta",
+              "param",
+              "source",
+              "track",
+              "wbr",
             ];
             if (voidElements.includes(tagName.toLowerCase())) return;
 
             const closingTag = `</${tagName}>`;
-            editor.executeEdits('auto-close-tag', [
+            editor.executeEdits("auto-close-tag", [
               {
                 range: new monaco.Range(
                   position.lineNumber,
@@ -141,17 +181,104 @@ export default function EditorPanel({
     });
   };
 
+  if (!workspaceRoot) {
+    return (
+      <div className="editor-panel empty">
+        <div className="welcome-screen">
+          <div className="welcome-hero">
+            <div className="welcome-logo-container">
+              <Code2 size={48} className="welcome-logo" />
+            </div>
+            <h1 className="welcome-title">DevWatch Editor</h1>
+            <p className="welcome-subtitle">
+              A lightweight learning environment
+            </p>
+          </div>
+
+          <div className="start-section">
+            <button className="start-item" onClick={onOpenFolder}>
+              <div className="start-icon">
+                <FolderOpen size={24} />
+              </div>
+              <div className="start-text">
+                <span className="start-title">Open Folder</span>
+                <span className="start-desc">
+                  Choose a directory to start coding
+                </span>
+              </div>
+            </button>
+          </div>
+
+          <div className="welcome-shortcuts">
+            <div className="shortcut">
+              <span>Toggle Explorer</span>{" "}
+              <div className="kbd-wrap">
+                <kbd>Ctrl</kbd>+<kbd>B</kbd>
+              </div>
+            </div>
+            <div className="shortcut">
+              <span>Toggle Preview Panel</span>{" "}
+              <div className="kbd-wrap">
+                <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd>
+              </div>
+            </div>
+            <div className="shortcut">
+              <span>Toggle Preview Tab</span>{" "}
+              <div className="kbd-wrap">
+                <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (tabs.length === 0) {
     return (
       <div className="editor-panel empty">
-        <div className="editor-empty-state">
-          <div className="editor-empty-icon"><FileCode2 size={48} strokeWidth={1} /></div>
-          <h3>DevWatch Editor</h3>
-          <p>Select a file from the explorer to begin</p>
-          <div className="editor-shortcuts">
-            <div className="shortcut"><span>Save File</span> <div className="kbd-wrap"><kbd>Ctrl</kbd>+<kbd>S</kbd></div></div>
-            <div className="shortcut"><span>Close Tab</span> <div className="kbd-wrap"><kbd>Ctrl</kbd>+<kbd>W</kbd></div></div>
-            <div className="shortcut"><span>Toggle Explorer</span> <div className="kbd-wrap"><kbd>Ctrl</kbd>+<kbd>B</kbd></div></div>
+        <div className="welcome-screen">
+          <div className="welcome-hero">
+            <div className="welcome-logo-container">
+              <FileCode2 size={48} className="welcome-logo" />
+            </div>
+            <h1 className="welcome-title">Folder Opened</h1>
+            <p className="welcome-subtitle">
+              Select a file from the explorer to begin
+            </p>
+          </div>
+
+          <div className="welcome-shortcuts">
+            <div className="shortcut">
+              <span>Save File</span>{" "}
+              <div className="kbd-wrap">
+                <kbd>Ctrl</kbd>+<kbd>S</kbd>
+              </div>
+            </div>
+            <div className="shortcut">
+              <span>Close Tab</span>{" "}
+              <div className="kbd-wrap">
+                <kbd>Ctrl</kbd>+<kbd>W</kbd>
+              </div>
+            </div>
+            <div className="shortcut">
+              <span>Toggle Explorer</span>{" "}
+              <div className="kbd-wrap">
+                <kbd>Ctrl</kbd>+<kbd>B</kbd>
+              </div>
+            </div>
+            <div className="shortcut">
+              <span>Toggle Preview Panel</span>{" "}
+              <div className="kbd-wrap">
+                <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd>
+              </div>
+            </div>
+            <div className="shortcut">
+              <span>Toggle Preview Tab</span>{" "}
+              <div className="kbd-wrap">
+                <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -165,18 +292,29 @@ export default function EditorPanel({
         {tabs.map((tab) => (
           <div
             key={tab.path}
-            className={`tab ${tab.path === activeTabPath ? 'active' : ''}`}
+            className={`tab ${tab.path === activeTabPath ? "active" : ""}`}
             onClick={() => onTabClick(tab.path)}
             onDoubleClick={() => onTabDoubleClick?.(tab.path)}
           >
             {getTabIcon(tab)}
-            <span className="tab-name" style={{ fontStyle: tab.isPreviewFile && !tab.isDirty ? 'italic' : 'normal' }}>
+            <span
+              className="tab-name"
+              style={{
+                fontStyle:
+                  tab.isPreviewFile && !tab.isDirty ? "italic" : "normal",
+              }}
+            >
               {tab.name}
             </span>
-            {tab.isDirty && <span className="dirty-dot" title="Unsaved changes"></span>}
+            {tab.isDirty && (
+              <span className="dirty-dot" title="Unsaved changes"></span>
+            )}
             <button
               className="tab-close"
-              onClick={(e) => { e.stopPropagation(); onTabClose(tab.path); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onTabClose(tab.path);
+              }}
               title="Close"
             >
               <X size={14} />
@@ -191,22 +329,26 @@ export default function EditorPanel({
         return (
           <div
             key={tab.path}
-            className={`editor-wrapper ${tab.type === 'image' ? 'image-preview-wrapper' : ''}`}
-            style={{ display: isActive ? 'block' : 'none', height: '100%', width: '100%' }}
+            className={`editor-wrapper ${tab.type === "image" ? "image-preview-wrapper" : ""}`}
+            style={{
+              display: isActive ? "block" : "none",
+              height: "100%",
+              width: "100%",
+            }}
           >
-            {tab.type === 'preview' ? (
+            {tab.type === "preview" ? (
               <PreviewPanel workspaceRoot={workspaceRoot} isFullTab />
-            ) : tab.type === 'image' ? (
+            ) : tab.type === "image" ? (
               <img
                 src={tab.content}
                 alt={tab.name}
                 className="image-preview"
                 onError={(e) => {
                   const target = e.currentTarget;
-                  target.style.display = 'none';
-                  const fallback = document.createElement('div');
-                  fallback.className = 'image-error';
-                  fallback.textContent = 'Failed to load image';
+                  target.style.display = "none";
+                  const fallback = document.createElement("div");
+                  fallback.className = "image-error";
+                  fallback.textContent = "Failed to load image";
                   target.parentElement?.appendChild(fallback);
                 }}
               />
@@ -215,7 +357,7 @@ export default function EditorPanel({
                 height="100%"
                 language={tab.language}
                 value={tab.content}
-                theme={theme === 'light' ? 'vs-light' : 'vs-dark'}
+                theme={theme === "light" ? "vs-light" : "vs-dark"}
                 options={EDITOR_OPTIONS}
                 onMount={isActive ? handleEditorMount : undefined}
                 onChange={(value) => {

@@ -7,7 +7,7 @@
   justify-content: space-between;
   align-items: center;
   padding: 0;
-  padding-top: 32px;
+  padding-top: 36px;
   padding-bottom: 16px;
   border-right: 1px solid var(--border);
   flex-shrink: 0;
@@ -18,7 +18,16 @@
   padding-top: 0;
 }
 
-.activity-top, .activity-bottom {
+.activity-top {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  padding-top: 16px;
+}
+
+.activity-bottom {
   display: flex;
   flex-direction: column;
   align-items: center;

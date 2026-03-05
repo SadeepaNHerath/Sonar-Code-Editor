@@ -52,9 +52,31 @@ export default function SettingsModal({
     ? activeTab === 'Appearance' 
     : (matchesSearch('Appearance') || matchesSearch('Color Theme') || matchesSearch('interface theme'));
 
+  const shortcuts = [
+    { action: 'Save File', keys: ['Ctrl', 'S'] },
+    { action: 'Close Tab', keys: ['Ctrl', 'W'] },
+    { action: 'New File', keys: ['Ctrl', 'N'] },
+    { action: 'Toggle Explorer', keys: ['Ctrl', 'B'] },
+    { action: 'Toggle Preview Panel', keys: ['Ctrl', 'Shift', 'V'] },
+    { action: 'Toggle Preview Tab', keys: ['Ctrl', 'Shift', 'B'] },
+  ];
+
+  const filteredShortcuts = shortcuts.filter(s => 
+    matchesSearch(s.action) || s.keys.some(k => matchesSearch(k)) || matchesSearch('Keyboard Shortcuts')
+  );
+
+  const showKeyboardShortcuts = !isSearching 
+    ? activeTab === 'Keyboard Shortcuts' 
+    : filteredShortcuts.length > 0;
+
+  const isWindows = navigator.userAgent.toLowerCase().includes('win');
+
   return (
     <div className="vscode-settings-overlay">
-      <div className="vscode-settings-header-tabs">
+      <div 
+        className="vscode-settings-header-tabs"
+        style={{ paddingLeft: isWindows ? '0px' : '75px' }}
+      >
         <div className="vscode-settings-tab active">User</div>
         <button className="vscode-settings-close" onClick={onClose}><X size={16}/></button>
       </div>
@@ -75,8 +97,9 @@ export default function SettingsModal({
       <div className="vscode-settings-body">
         <div className="vscode-settings-sidebar">
            <ul className="vscode-settings-tree">
-             <li className={activeTab === 'Text Editor' ? 'active' : ''} onClick={() => setActiveTab('Text Editor')}>Text Editor</li>
-             <li className={activeTab === 'Appearance' ? 'active' : ''} onClick={() => setActiveTab('Appearance')}>Appearance</li>
+             <li className={(isSearching ? showTextEditor : activeTab === 'Text Editor') ? 'active' : ''} onClick={() => setActiveTab('Text Editor')}>Text Editor</li>
+             <li className={(isSearching ? showAppearance : activeTab === 'Appearance') ? 'active' : ''} onClick={() => setActiveTab('Appearance')}>Appearance</li>
+             <li className={(isSearching ? showKeyboardShortcuts : activeTab === 'Keyboard Shortcuts') ? 'active' : ''} onClick={() => setActiveTab('Keyboard Shortcuts')}>Keyboard Shortcuts</li>
            </ul>
         </div>
         <div className="vscode-settings-content">
@@ -147,6 +170,31 @@ export default function SettingsModal({
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {showKeyboardShortcuts && (
+            <div className="vscode-settings-section">
+              <h2 className="vscode-settings-section-title">Keyboard Shortcuts</h2>
+              <div className="shortcuts-table">
+                <div className="shortcuts-header">
+                  <span>Action</span>
+                  <span>Shortcut</span>
+                </div>
+                {filteredShortcuts.map((s) => (
+                  <div className="shortcuts-row" key={s.action}>
+                    <span className="shortcuts-action">{s.action}</span>
+                    <div className="kbd-wrap">
+                      {s.keys.map((k, i) => (
+                        <React.Fragment key={k}>
+                          {i > 0 && <span className="kbd-sep">+</span>}
+                          <kbd>{k}</kbd>
+                        </React.Fragment>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>

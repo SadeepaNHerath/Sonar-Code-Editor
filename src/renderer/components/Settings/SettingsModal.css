@@ -240,3 +240,70 @@
   outline: 1px solid var(--accent);
   outline-offset: 2px;
 }
+
+/* Keyboard Shortcuts Table */
+.shortcuts-table {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.shortcuts-header {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 16px;
+  background-color: var(--bg-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--border);
+}
+
+.shortcuts-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  font-size: 13px;
+  border-bottom: 1px solid var(--border);
+  transition: background-color 0.1s;
+}
+
+.shortcuts-row:last-child {
+  border-bottom: none;
+}
+
+.shortcuts-row:hover {
+  background-color: var(--bg-hover);
+}
+
+.shortcuts-action {
+  color: var(--text-primary);
+}
+
+.shortcuts-row .kbd-wrap {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.shortcuts-row .kbd-wrap kbd {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--text-primary);
+  box-shadow: 0 1px 0 var(--border);
+}
+
+.kbd-sep {
+  color: var(--text-muted);
+  font-size: 11px;
+  margin: 0 1px;
+}

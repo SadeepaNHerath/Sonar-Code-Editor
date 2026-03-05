@@ -89,6 +89,13 @@ export interface HeartbeatPayload {
   appName?: string;
 }
 
+export interface SearchResult {
+  path: string;
+  name: string;
+  line: number;
+  text: string;
+}
+
 export interface ElectronAPI {
   fs: {
     readDirectory: (path: string) => Promise<FileNode[]>;
@@ -99,6 +106,7 @@ export interface ElectronAPI {
     createFolder: (path: string) => Promise<void>;
     deleteItem: (path: string) => Promise<void>;
     renameItem: (oldPath: string, newPath: string) => Promise<void>;
+    search: (dirPath: string, query: string) => Promise<SearchResult[]>;
     openFolderDialog: () => Promise<{ path: string; isDirectory: boolean } | null>;
     openFileDialog: () => Promise<{ path: string; isDirectory: boolean; parentPath: string; name: string } | null>;
   };
