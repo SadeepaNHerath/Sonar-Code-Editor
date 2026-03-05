@@ -76,6 +76,7 @@ kbd {
   overflow-x: auto;
   min-height: 40px;
   border-bottom: 1px solid var(--border);
+  -webkit-app-region: no-drag;
 }
 
 .tab-bar::-webkit-scrollbar {
@@ -97,6 +98,7 @@ kbd {
   max-width: 200px;
   position: relative;
   transition: all 0.2s;
+  -webkit-app-region: no-drag;
 }
 
 .tab:hover {
