@@ -93,12 +93,19 @@ export interface ElectronAPI {
   fs: {
     readDirectory: (path: string) => Promise<FileNode[]>;
     readFile: (path: string) => Promise<string>;
+    readFileAsBase64: (path: string) => Promise<string>;
     writeFile: (path: string, content: string) => Promise<void>;
     createFile: (path: string) => Promise<void>;
     createFolder: (path: string) => Promise<void>;
     deleteItem: (path: string) => Promise<void>;
     renameItem: (oldPath: string, newPath: string) => Promise<void>;
-    openFolderDialog: () => Promise<string | null>;
+    openFolderDialog: () => Promise<{ path: string; isDirectory: boolean } | null>;
+    openFileDialog: () => Promise<{ path: string; isDirectory: boolean; parentPath: string; name: string } | null>;
+  };
+  server: {
+    start: (rootDir: string) => Promise<number>;
+    stop: () => Promise<void>;
+    getUrl: () => Promise<string | null>;
   };
   monitoring: {
     start: (teamName: string, teamId: string) => void;
@@ -111,5 +118,10 @@ export interface ElectronAPI {
   dialog: {
     showError: (message: string) => void;
     showInfo: (message: string) => void;
+  };
+  devtools: {
+    open: (previewContentsId: number) => Promise<void>;
+    close: () => Promise<void>;
+    resize: (bounds: { x: number; y: number; width: number; height: number }) => Promise<void>;
   };
 }

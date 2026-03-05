@@ -1,192 +1,300 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { OpenTab } from '../../pages/IDE';
+import { ArrowLeft, ArrowRight, RotateCw, Home, Terminal, Monitor, XCircle, Ban, AlertTriangle, MonitorPlay, ExternalLink, X } from 'lucide-react';
+import { PanelGroup, Panel, PanelResizeHandle } from 'react-resizable-panels';
 import './PreviewPanel.css';
 
+interface ConsoleEntry {
+  id: number;
+  level: 'log' | 'warn' | 'error' | 'info' | 'debug';
+  message: string;
+  source: string;
+  line: number;
+  timestamp: number;
+}
+
 interface PreviewPanelProps {
-  activeTab: OpenTab | null;
-  allTabs?: OpenTab[];
+  workspaceRoot: string | null;
+  onOpenInTab?: () => void;
+  isFullTab?: boolean;
+  onClose?: () => void;
 }
 
-/**
- * Resolve relative `<script src="...">` and `<link href="...">` references
- * by reading the files from disk and inlining their content.
- * This is necessary because `srcDoc` iframes have no base URL.
- */
-async function resolveRelativeAssets(
-  html: string,
-  filePath: string,
-  openTabs: OpenTab[],
-): Promise<string> {
-  // Get directory of the current HTML file
-  const dir = filePath.substring(0, filePath.lastIndexOf('/'));
+let entryIdCounter = 0;
 
-  // Helper: resolve a relative path against the HTML file's directory
-  const resolve = (rel: string) => {
-    if (rel.startsWith('http://') || rel.startsWith('https://') || rel.startsWith('data:') || rel.startsWith('blob:')) {
-      return null; // skip absolute URLs
-    }
-    // Simple path resolution
-    const parts = dir.split('/');
-    for (const seg of rel.split('/')) {
-      if (seg === '..') parts.pop();
-      else if (seg !== '.' && seg !== '') parts.push(seg);
-    }
-    return parts.join('/');
-  };
+export default function PreviewPanel({ workspaceRoot, onOpenInTab, isFullTab, onClose }: PreviewPanelProps) {
+  const webviewRef = useRef<HTMLWebViewElement>(null);
+  const devtoolsContainerRef = useRef<HTMLDivElement>(null);
+  const consoleEndRef = useRef<HTMLDivElement>(null);
+  const [serverUrl, setServerUrl] = useState<string | null>(null);
+  const [currentUrl, setCurrentUrl] = useState<string>('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [canGoBack, setCanGoBack] = useState(false);
+  const [canGoForward, setCanGoForward] = useState(false);
+  const [consoleOpen, setConsoleOpen] = useState(false);
+  const [consoleLogs, setConsoleLogs] = useState<ConsoleEntry[]>([]);
+  const [consoleFilter, setConsoleFilter] = useState<string>('all');
+  const [devtoolsOpen, setDevtoolsOpen] = useState(false);
 
-  // Helper: read file content — check open tabs first, then disk
-  const readContent = async (absPath: string): Promise<string | null> => {
-    const tab = openTabs.find((t) => t.path === absPath);
-    if (tab) return tab.content;
-    try {
-      return await window.electronAPI.fs.readFile(absPath);
-    } catch {
-      return null;
-    }
-  };
-
-  let result = html;
-
-  // Inline <script src="..."> tags
-  const scriptRegex = /<script\s+([^>]*?)src=["']([^"']+)["']([^>]*?)>\s*<\/script>/gi;
-  const scriptMatches = [...html.matchAll(scriptRegex)];
-  for (const match of scriptMatches) {
-    const relPath = match[2];
-    const absPath = resolve(relPath);
-    if (!absPath) continue;
-    const content = await readContent(absPath);
-    if (content !== null) {
-      result = result.replace(match[0], `<script>\n${content}\n</script>`);
-    }
-  }
-
-  // Inline <link rel="stylesheet" href="..."> tags
-  const linkRegex = /<link\s+([^>]*?)href=["']([^"']+)["']([^>]*?)\/?>/gi;
-  const linkMatches = [...html.matchAll(linkRegex)];
-  for (const match of linkMatches) {
-    const fullTag = match[0];
-    // Only inline stylesheet links
-    if (!/rel=["']stylesheet["']/i.test(fullTag)) continue;
-    const relPath = match[2];
-    const absPath = resolve(relPath);
-    if (!absPath) continue;
-    const content = await readContent(absPath);
-    if (content !== null) {
-      result = result.replace(match[0], `<style>\n${content}\n</style>`);
-    }
-  }
-
-  return result;
-}
-
-/** Inject a console forwarder so iframe console output appears in DevTools */
-function injectConsoleForwarder(html: string): string {
-  const script = `<script>
-(function() {
-  var _log = console.log, _warn = console.warn, _error = console.error, _info = console.info;
-  function send(level, args) {
-    try { window.parent.postMessage({ __preview_console: true, level: level, args: Array.from(args).map(function(a) { try { return typeof a === 'object' ? JSON.stringify(a) : String(a); } catch(e) { return String(a); } }) }, '*'); } catch(e) {}
-  }
-  console.log   = function() { send('log',   arguments); return _log.apply(console, arguments); };
-  console.warn  = function() { send('warn',  arguments); return _warn.apply(console, arguments); };
-  console.error = function() { send('error', arguments); return _error.apply(console, arguments); };
-  console.info  = function() { send('info',  arguments); return _info.apply(console, arguments); };
-})();
-</script>`;
-  // Insert right after <head> or at the beginning
-  if (/<head[^>]*>/i.test(html)) {
-    return html.replace(/<head[^>]*>/i, (m) => m + '\n' + script);
-  }
-  return script + '\n' + html;
-}
-
-export default function PreviewPanel({ activeTab, allTabs = [] }: PreviewPanelProps) {
-  const iframeRef = useRef<HTMLIFrameElement>(null);
-  const [resolvedHtml, setResolvedHtml] = useState<string>('');
-  const [key, setKey] = useState(0);
-
-  const isHtml = activeTab?.language === 'html';
-  const isCss = activeTab?.language === 'css';
-
-  // Resolve assets and update preview (debounced)
   useEffect(() => {
-    if (!activeTab || (!isHtml && !isCss)) {
-      setResolvedHtml('');
+    if (!workspaceRoot) {
+      setServerUrl(null);
       return;
     }
 
-    const timer = setTimeout(async () => {
-      let html: string;
-      if (isHtml) {
-        html = await resolveRelativeAssets(activeTab.content, activeTab.path, allTabs);
-      } else {
-        html = `<!DOCTYPE html><html><head><style>${activeTab.content}</style></head><body><p style="font-family: sans-serif; padding: 20px; color: #666">CSS Preview — add HTML to see full layout</p></body></html>`;
+    let cancelled = false;
+    (async () => {
+      try {
+        const port = await window.electronAPI.server.start(workspaceRoot);
+        if (!cancelled) {
+          const url = `http://127.0.0.1:${port}`;
+          setServerUrl(url);
+          setCurrentUrl(url);
+        }
+      } catch (err) {
+        console.error('Failed to start preview server:', err);
       }
-      html = injectConsoleForwarder(html);
-      setResolvedHtml(html);
-      setKey((k) => k + 1);
-    }, 800);
+    })();
 
-    return () => clearTimeout(timer);
-  }, [activeTab?.content, activeTab?.path, isHtml, isCss]);
+    return () => { cancelled = true; };
+  }, [workspaceRoot]);
 
-  // Listen for console messages from iframe
   useEffect(() => {
-    const handler = (e: MessageEvent) => {
-      if (e.data && e.data.__preview_console) {
-        const { level, args } = e.data;
-        const prefix = '[Preview]';
-        (console as any)[level]?.(prefix, ...args);
-      }
+    const wv = webviewRef.current;
+    if (!wv) return;
+
+    const onStartLoading = () => setIsLoading(true);
+    const onStopLoading = () => {
+      setIsLoading(false);
+      setCanGoBack((wv as any).canGoBack());
+      setCanGoForward((wv as any).canGoForward());
     };
-    window.addEventListener('message', handler);
-    return () => window.removeEventListener('message', handler);
-  }, []);
+    const onNavigate = (e: any) => {
+      setCurrentUrl(e.url);
+    };
+
+    const onConsoleMessage = (e: any) => {
+      const levelMap: Record<number, ConsoleEntry['level']> = {
+        0: 'debug', 1: 'log', 2: 'warn', 3: 'error',
+      };
+      const entry: ConsoleEntry = {
+        id: ++entryIdCounter,
+        level: levelMap[e.level] || 'log',
+        message: e.message,
+        source: e.sourceId || '',
+        line: e.line || 0,
+        timestamp: Date.now(),
+      };
+      setConsoleLogs((prev) => [...prev.slice(-500), entry]);
+    };
+
+    wv.addEventListener('did-start-loading', onStartLoading);
+    wv.addEventListener('did-stop-loading', onStopLoading);
+    wv.addEventListener('did-navigate', onNavigate);
+    wv.addEventListener('did-navigate-in-page', onNavigate);
+    wv.addEventListener('console-message', onConsoleMessage);
+
+    return () => {
+      wv.removeEventListener('did-start-loading', onStartLoading);
+      wv.removeEventListener('did-stop-loading', onStopLoading);
+      wv.removeEventListener('did-navigate', onNavigate);
+      wv.removeEventListener('did-navigate-in-page', onNavigate);
+      wv.removeEventListener('console-message', onConsoleMessage);
+    };
+  }, [serverUrl]);
+
+  useEffect(() => {
+    consoleEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [consoleLogs]);
 
   const refresh = useCallback(() => {
-    setKey((k) => k + 1);
+    (webviewRef.current as any)?.reload();
   }, []);
 
-  if (!activeTab) {
-    return (
-      <div className="preview-panel empty">
-        <div className="preview-empty">
-          <div style={{ fontSize: 40, marginBottom: 12, opacity: 0.4 }}>👁</div>
-          <p>No file selected</p>
-          <small>Open an HTML file to see a live preview</small>
-        </div>
-      </div>
-    );
-  }
+  const goBack = useCallback(() => {
+    (webviewRef.current as any)?.goBack();
+  }, []);
 
-  if (!isHtml && !isCss) {
+  const goForward = useCallback(() => {
+    (webviewRef.current as any)?.goForward();
+  }, []);
+
+  const navigateHome = useCallback(() => {
+    if (serverUrl && webviewRef.current) {
+      (webviewRef.current as any).loadURL(serverUrl);
+    }
+  }, [serverUrl]);
+
+  const toggleConsole = useCallback(() => {
+    setConsoleOpen((v) => !v);
+  }, []);
+
+  const clearConsole = useCallback(() => {
+    setConsoleLogs([]);
+  }, []);
+
+  const openInspector = useCallback(() => {
+    if (devtoolsOpen) {
+      window.electronAPI.devtools.close();
+      setDevtoolsOpen(false);
+      return;
+    }
+    setDevtoolsOpen(true);
+  }, [devtoolsOpen]);
+
+  useEffect(() => {
+    if (!devtoolsOpen) return;
+    const wv = webviewRef.current as any;
+    if (!wv) return;
+
+    let previewId: number;
+    try {
+      previewId = wv.getWebContentsId();
+    } catch {
+      return;
+    }
+    window.electronAPI.devtools.open(previewId);
+
+    return () => {
+      window.electronAPI.devtools.close();
+    };
+  }, [devtoolsOpen]);
+
+  useEffect(() => {
+    if (!devtoolsOpen || !devtoolsContainerRef.current) return;
+
+    const updateBounds = () => {
+      const el = devtoolsContainerRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      window.electronAPI.devtools.resize({
+        x: Math.round(rect.x),
+        y: Math.round(rect.y),
+        width: Math.round(rect.width),
+        height: Math.round(rect.height),
+      });
+    };
+
+    const timer = setTimeout(updateBounds, 50);
+    const observer = new ResizeObserver(updateBounds);
+    observer.observe(devtoolsContainerRef.current);
+    window.addEventListener('resize', updateBounds);
+
+    return () => {
+      clearTimeout(timer);
+      observer.disconnect();
+      window.removeEventListener('resize', updateBounds);
+    };
+  }, [devtoolsOpen]);
+
+  const filteredLogs = consoleFilter === 'all'
+    ? consoleLogs
+    : consoleLogs.filter((l) => l.level === consoleFilter);
+
+  const errorCount = consoleLogs.filter((l) => l.level === 'error').length;
+  const warnCount = consoleLogs.filter((l) => l.level === 'warn').length;
+
+  if (!serverUrl) {
     return (
-      <div className="preview-panel empty">
-        <div className="preview-empty">
-          <div style={{ fontSize: 40, marginBottom: 12, opacity: 0.3 }}>👁</div>
-          <p>Preview not available</p>
-          <small>Open an HTML or CSS file for live preview</small>
+      <div className={`preview-panel ${isFullTab ? 'preview-full-tab' : ''}`}>
+        <div className="preview-body" style={{ alignItems: 'center', justifyContent: 'center' }}>
+          <div className="empty-state">
+            <MonitorPlay size={48} className="empty-icon" />
+            <p>Open a folder (or file) to start the preview server</p>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="preview-panel">
+    <div className={`preview-panel ${isFullTab ? 'preview-full-tab' : ''}`}>
       <div className="preview-toolbar">
-        <span className="preview-title">Live Preview — {activeTab.name}</span>
-        <button className="preview-refresh-btn" onClick={refresh} title="Refresh">↻</button>
+        <button className="preview-btn" onClick={goBack} disabled={!canGoBack} title="Go Back">
+          <ArrowLeft size={16} />
+        </button>
+        <button className="preview-btn" onClick={goForward} disabled={!canGoForward} title="Go Forward">
+          <ArrowRight size={16} />
+        </button>
+        <button className="preview-btn" onClick={refresh} title="Reload">
+          <RotateCw size={16} className={isLoading ? 'spinning' : ''} />
+        </button>
+        <button className="preview-btn" onClick={navigateHome} title="Home">
+          <Home size={16} />
+        </button>
+
+        <div className="preview-address-bar" title={currentUrl}>
+          {currentUrl}
+        </div>
+
+        {!isFullTab && onOpenInTab && (
+          <button className="preview-btn" onClick={onOpenInTab} title="Open in Editor Tab">
+            <ExternalLink size={16} />
+          </button>
+        )}
+        <button className={`preview-btn ${consoleOpen ? 'active' : ''}`} onClick={toggleConsole} title="Toggle Console">
+          <Terminal size={16} />
+        </button>
+        <button className={`preview-btn ${devtoolsOpen ? 'active' : ''}`} onClick={openInspector} title="Toggle Inspector">
+          <Monitor size={16} />
+        </button>
+        {!isFullTab && onClose && (
+          <button className="preview-btn" onClick={onClose} title="Close Preview Panel">
+            <X size={16} />
+          </button>
+        )}
       </div>
-      <div className="preview-content">
-        <iframe
-          key={key}
-          ref={iframeRef}
-          className="preview-iframe"
-          srcDoc={resolvedHtml}
-          sandbox="allow-scripts allow-modals allow-same-origin allow-forms"
-          title="Preview"
-        />
+
+      <div className="preview-body">
+        {isLoading && <div className="preview-loading-bar" />}
+        <PanelGroup direction="vertical">
+          <Panel id="webview-panel" minSize={10} style={{ display: 'flex', flexDirection: 'column' }}>
+            <webview
+              ref={webviewRef}
+              src={serverUrl}
+              className="preview-webview"
+              webpreferences="allowRunningInsecureContent=no"
+            />
+          </Panel>
+          {devtoolsOpen && (
+            <>
+              <PanelResizeHandle className="resize-handle horizontal" />
+              <Panel id="devtools-panel" defaultSize={40} minSize={10}>
+                <div className="devtools-container" ref={devtoolsContainerRef} style={{ width: '100%', height: '100%' }} />
+              </Panel>
+            </>
+          )}
+        </PanelGroup>
       </div>
+
+      {consoleOpen && !devtoolsOpen && (
+        <div className="preview-console">
+          <div className="console-header">
+            <div className="console-filters">
+              <button className={`filter-btn ${consoleFilter === 'all' ? 'active' : ''}`} onClick={() => setConsoleFilter('all')}>All</button>
+              <button className={`filter-btn ${consoleFilter === 'error' ? 'active' : ''}`} onClick={() => setConsoleFilter('error')}>
+                <XCircle size={12} style={{ display: 'inline', marginRight: 4, verticalAlign: 'text-bottom' }}/> Errors {errorCount > 0 && `(${errorCount})`}
+              </button>
+              <button className={`filter-btn ${consoleFilter === 'warn' ? 'active' : ''}`} onClick={() => setConsoleFilter('warn')}>
+                <AlertTriangle size={12} style={{ display: 'inline', marginRight: 4, verticalAlign: 'text-bottom' }}/> Warn {warnCount > 0 && `(${warnCount})`}
+              </button>
+            </div>
+            <div className="console-actions">
+              <button className="preview-btn" onClick={clearConsole} title="Clear Console">
+                <Ban size={14} />
+              </button>
+            </div>
+          </div>
+          <div className="console-logs">
+            {filteredLogs.map((log) => (
+              <div key={log.id} className={`console-entry ${log.level}`}>
+                <span className="console-msg">{log.message}</span>
+                <span className="console-source">{log.source.split('/').pop()}:{log.line}</span>
+              </div>
+            ))}
+            <div ref={consoleEndRef} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

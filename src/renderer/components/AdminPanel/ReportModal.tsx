@@ -112,7 +112,7 @@ function formatDuration(seconds: number): string {
 }
 
 function formatTime(iso: string): string {
-  if (!iso) return '—';
+  if (!iso) return 'â€”';
   return new Date(iso).toLocaleTimeString();
 }
 
@@ -165,11 +165,11 @@ export default function ReportModal({ team, onClose }: ReportModalProps) {
         {/* Modal Header */}
         <div className="modal-header">
           <div>
-            <h2>Report — {team.teamName}</h2>
+            <h2>Report â€” {team.teamName}</h2>
             {reportData?.sessionStart && (
               <p className="modal-subtitle">
                 {new Date(reportData.sessionStart).toLocaleDateString()} &nbsp;
-                {formatTime(reportData.sessionStart)} → {formatTime(reportData.sessionEnd)}
+                {formatTime(reportData.sessionStart)} â†’ {formatTime(reportData.sessionEnd)}
               </p>
             )}
           </div>
@@ -177,7 +177,7 @@ export default function ReportModal({ team, onClose }: ReportModalProps) {
             <button className="admin-btn" onClick={handleExportPDF}>Export PDF</button>
             <button className="admin-btn" onClick={handleExportJSON}>Export JSON</button>
             <button className="admin-btn" onClick={handleSaveToAppwrite}>Save</button>
-            <button className="modal-close-btn" onClick={onClose}>×</button>
+            <button className="modal-close-btn" onClick={onClose}>Ã—</button>
           </div>
         </div>
 
@@ -271,11 +271,11 @@ export default function ReportModal({ team, onClose }: ReportModalProps) {
                       return (
                         <tr key={i} className={isNonIDE ? 'flagged-row' : ''}>
                           <td>{entry.appName}</td>
-                          <td className="td-window">{entry.windowTitle || '—'}</td>
+                          <td className="td-window">{entry.windowTitle || 'â€”'}</td>
                           <td>{formatTime(entry.firstSeen)}</td>
                           <td>{formatTime(entry.lastSeen)}</td>
                           <td>{formatDuration(entry.totalTime)}</td>
-                          <td>{isNonIDE ? <span className="flag-badge">⚠ Non-IDE</span> : ''}</td>
+                          <td>{isNonIDE ? <span className="flag-badge">âš  Non-IDE</span> : ''}</td>
                         </tr>
                       );
                     })}

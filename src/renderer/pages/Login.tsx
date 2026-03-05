@@ -29,7 +29,7 @@ export default function Login() {
       <div className="login-box">
         <div className="login-header">
           <div className="login-logo">
-            <span className="logo-icon">⌨</span>
+            <span className="logo-icon">âŒ¨</span>
           </div>
           <h1>DevWatch IDE</h1>
           <p>Sign in to your team account</p>

@@ -1,8 +1,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { IpcMain, Dialog } from 'electron';
+import { IpcMain, Dialog, webContents, BrowserView, BrowserWindow } from 'electron';
 import { FileNode } from '../shared/types';
 import { IPC_CHANNELS } from '../shared/constants';
+import { startStaticServer, stopStaticServer, getServerUrl } from './staticServer';
 
 function getExtension(filename: string): string {
   const parts = filename.split('.');
@@ -52,6 +53,22 @@ export function registerFsHandlers(ipcMain: IpcMain, dialog: Dialog): void {
       return fs.readFileSync(filePath, 'utf-8');
     } catch (err) {
       throw new Error(`Failed to read file: ${(err as Error).message}`);
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.FS_READ_FILE_BASE64, async (_event, filePath: string) => {
+    try {
+      const buffer = fs.readFileSync(filePath);
+      const ext = path.extname(filePath).toLowerCase().slice(1);
+      const mimeMap: Record<string, string> = {
+        png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+        gif: 'image/gif', bmp: 'image/bmp', svg: 'image/svg+xml',
+        webp: 'image/webp', ico: 'image/x-icon',
+      };
+      const mime = mimeMap[ext] || 'application/octet-stream';
+      return `data:${mime};base64,${buffer.toString('base64')}`;
+    } catch (err) {
+      throw new Error(`Failed to read file as base64: ${(err as Error).message}`);
     }
   });
 
@@ -108,9 +125,83 @@ export function registerFsHandlers(ipcMain: IpcMain, dialog: Dialog): void {
         title: 'Open Folder',
       });
       if (result.canceled || result.filePaths.length === 0) return null;
-      return result.filePaths[0];
+      return { path: result.filePaths[0], isDirectory: true };
     } catch (err) {
-      throw new Error(`Failed to open dialog: ${(err as Error).message}`);
+      throw new Error(`Failed to open folder dialog: ${(err as Error).message}`);
     }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.FS_OPEN_FILE_DIALOG, async (event) => {
+    const win = require('electron').BrowserWindow.fromWebContents(event.sender);
+    try {
+      const result = await dialog.showOpenDialog(win!, {
+        properties: ['openFile'],
+        title: 'Open File',
+      });
+      if (result.canceled || result.filePaths.length === 0) return null;
+      const selectedPath = result.filePaths[0];
+      return { path: selectedPath, isDirectory: false, parentPath: path.dirname(selectedPath), name: path.basename(selectedPath) };
+    } catch (err) {
+      throw new Error(`Failed to open file dialog: ${(err as Error).message}`);
+    }
+  });
+
+  // Static server handlers
+  ipcMain.handle(IPC_CHANNELS.SERVER_START, async (_event, rootDir: string) => {
+    const port = await startStaticServer(rootDir);
+    return port;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.SERVER_STOP, async () => {
+    await stopStaticServer();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.SERVER_GET_URL, async () => {
+    return getServerUrl();
+  });
+
+  // DevTools docking handlers using BrowserView
+  let devtoolsView: BrowserView | null = null;
+
+  ipcMain.handle(IPC_CHANNELS.DEVTOOLS_OPEN, async (event, previewId: number) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) return;
+    const previewContents = webContents.fromId(previewId);
+    if (!previewContents) return;
+
+    // Clean up existing
+    if (devtoolsView) {
+      try {
+        win.removeBrowserView(devtoolsView);
+        devtoolsView.webContents.close();
+      } catch {}
+      devtoolsView = null;
+    }
+
+    devtoolsView = new BrowserView();
+    win.addBrowserView(devtoolsView);
+    devtoolsView.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+    previewContents.setDevToolsWebContents(devtoolsView.webContents);
+    previewContents.openDevTools();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.DEVTOOLS_CLOSE, async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win || !devtoolsView) return;
+    try {
+      win.removeBrowserView(devtoolsView);
+      devtoolsView.webContents.close();
+    } catch {}
+    devtoolsView = null;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.DEVTOOLS_RESIZE, async (_event, bounds: { x: number; y: number; width: number; height: number }) => {
+    if (!devtoolsView) return;
+    devtoolsView.setBounds({
+      x: Math.round(bounds.x),
+      y: Math.round(bounds.y),
+      width: Math.round(bounds.width),
+      height: Math.round(bounds.height),
+    });
   });
 }

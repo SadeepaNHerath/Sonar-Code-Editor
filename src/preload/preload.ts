@@ -6,12 +6,19 @@ const api: ElectronAPI = {
   fs: {
     readDirectory: (path) => ipcRenderer.invoke(IPC_CHANNELS.FS_READ_DIR, path),
     readFile: (path) => ipcRenderer.invoke(IPC_CHANNELS.FS_READ_FILE, path),
+    readFileAsBase64: (path) => ipcRenderer.invoke(IPC_CHANNELS.FS_READ_FILE_BASE64, path),
     writeFile: (path, content) => ipcRenderer.invoke(IPC_CHANNELS.FS_WRITE_FILE, path, content),
     createFile: (path) => ipcRenderer.invoke(IPC_CHANNELS.FS_CREATE_FILE, path),
     createFolder: (path) => ipcRenderer.invoke(IPC_CHANNELS.FS_CREATE_FOLDER, path),
     deleteItem: (path) => ipcRenderer.invoke(IPC_CHANNELS.FS_DELETE_ITEM, path),
     renameItem: (oldPath, newPath) => ipcRenderer.invoke(IPC_CHANNELS.FS_RENAME_ITEM, oldPath, newPath),
     openFolderDialog: () => ipcRenderer.invoke(IPC_CHANNELS.FS_OPEN_FOLDER_DIALOG),
+    openFileDialog: () => ipcRenderer.invoke(IPC_CHANNELS.FS_OPEN_FILE_DIALOG),
+  },
+  server: {
+    start: (rootDir: string) => ipcRenderer.invoke(IPC_CHANNELS.SERVER_START, rootDir),
+    stop: () => ipcRenderer.invoke(IPC_CHANNELS.SERVER_STOP),
+    getUrl: () => ipcRenderer.invoke(IPC_CHANNELS.SERVER_GET_URL),
   },
   monitoring: {
     start: (teamName, teamId) => ipcRenderer.send(IPC_CHANNELS.MONITORING_START, teamName, teamId),
@@ -28,6 +35,14 @@ const api: ElectronAPI = {
   dialog: {
     showError: (message) => ipcRenderer.send(IPC_CHANNELS.DIALOG_SHOW_ERROR, message),
     showInfo: (message) => ipcRenderer.send(IPC_CHANNELS.DIALOG_SHOW_INFO, message),
+  },
+  devtools: {
+    open: (previewContentsId) =>
+      ipcRenderer.invoke(IPC_CHANNELS.DEVTOOLS_OPEN, previewContentsId),
+    close: () =>
+      ipcRenderer.invoke(IPC_CHANNELS.DEVTOOLS_CLOSE),
+    resize: (bounds) =>
+      ipcRenderer.invoke(IPC_CHANNELS.DEVTOOLS_RESIZE, bounds),
   },
 };
 

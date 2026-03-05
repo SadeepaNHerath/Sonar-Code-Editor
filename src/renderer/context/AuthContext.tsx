@@ -54,7 +54,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false);
       return { success: false, error: 'Invalid credentials' };
     } catch (err) {
-      // Network error — try cached login
+      // Network error â€” try cached login
       const cached = validateCachedAuth(teamName, password);
       if (cached) {
         const offlineUser: Team = {

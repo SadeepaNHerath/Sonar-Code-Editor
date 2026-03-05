@@ -89,13 +89,13 @@ export default function AdminDashboard() {
   const offlineCount = teams.filter((t) => t.status === 'offline').length;
 
   const formatTime = (iso: string) => {
-    if (!iso) return '—';
+    if (!iso) return 'â€”';
     const d = new Date(iso);
     return d.toLocaleTimeString();
   };
 
   const timeSince = (iso: string) => {
-    if (!iso) return '—';
+    if (!iso) return 'â€”';
     const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
     if (diff < 60) return `${diff}s ago`;
     if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
@@ -107,13 +107,13 @@ export default function AdminDashboard() {
       {/* Header */}
       <div className="admin-header">
         <div className="admin-header-left">
-          <span className="admin-logo">👁 DevWatch Admin</span>
+          <span className="admin-logo">ðŸ‘ DevWatch Admin</span>
         </div>
         <div className="admin-header-right">
           {lastUpdated && (
             <span className="last-updated">Updated {formatTime(lastUpdated.toISOString())}</span>
           )}
-          <button className="admin-btn" onClick={loadSessions}>↻ Refresh</button>
+          <button className="admin-btn" onClick={loadSessions}>â†» Refresh</button>
           <span className="admin-user">{user?.teamName}</span>
           <button className="admin-btn danger" onClick={logout}>Sign Out</button>
         </div>
@@ -174,11 +174,11 @@ export default function AdminDashboard() {
                     </span>
                   </td>
                   <td className="td-name">{team.teamName}</td>
-                  <td className="td-window">{team.currentWindow || '—'}</td>
+                  <td className="td-window">{team.currentWindow || 'â€”'}</td>
                   <td className="td-file">
                     {team.currentFile ? (
                       <code className="file-path">{team.currentFile.split('/').pop()}</code>
-                    ) : '—'}
+                    ) : 'â€”'}
                   </td>
                   <td className="td-time">{timeSince(team.lastSeen)}</td>
                   <td>
