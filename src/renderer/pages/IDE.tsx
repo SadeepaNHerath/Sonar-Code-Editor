@@ -5,6 +5,7 @@ import FileTree from '../components/FileTree/FileTree';
 import EditorPanel from '../components/Editor/EditorPanel';
 import PreviewPanel from '../components/Preview/PreviewPanel';
 import ActivityBar from '../components/Sidebar/ActivityBar';
+import SettingsModal from '../components/Settings/SettingsModal';
 import { useMonitoring } from '../hooks/useMonitoring';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import './IDE.css';
@@ -46,18 +47,41 @@ export default function IDE() {
   const [activeTabPath, setActiveTabPath] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(true);
   const [showExplorer, setShowExplorer] = useState(true);
-  const [theme, setTheme] = useState(() => localStorage.getItem('ide-theme') || 'dark');
+  const [theme, setTheme] = useState(() => localStorage.getItem('ide-theme') || 'system');
   const [autoSave, setAutoSave] = useState(() => localStorage.getItem('ide-autosave') === 'true');
+  const [hotReload, setHotReload] = useState(() => localStorage.getItem('ide-hotreload') !== 'false');
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [newFileTrigger, setNewFileTrigger] = useState(0);
 
   useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem('ide-theme', theme);
+    let activeTheme = theme;
+    if (theme === 'system') {
+      activeTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      
+      const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+      const listener = (e: MediaQueryListEvent) => {
+        if (theme === 'system') {
+          document.documentElement.setAttribute('data-theme', e.matches ? 'dark' : 'light');
+        }
+      };
+      mediaQuery.addEventListener('change', listener);
+      document.documentElement.setAttribute('data-theme', activeTheme);
+      localStorage.setItem('ide-theme', theme);
+      
+      return () => mediaQuery.removeEventListener('change', listener);
+    } else {
+      document.documentElement.setAttribute('data-theme', theme);
+      localStorage.setItem('ide-theme', theme);
+    }
   }, [theme]);
 
   useEffect(() => {
     localStorage.setItem('ide-autosave', String(autoSave));
   }, [autoSave]);
+
+  useEffect(() => {
+    localStorage.setItem('ide-hotreload', String(hotReload));
+  }, [hotReload]);
 
   useEffect(() => {
     const dirtyTabs = tabs.filter(t => t.isDirty && t.type !== 'preview' && t.type !== 'image');
@@ -78,17 +102,17 @@ export default function IDE() {
           console.error('Failed to auto-save file for live preview:', err);
         }
       }
-      if (savedAny) {
+      if (savedAny && hotReload) {
         // Dispatch file-saved to trigger hot reload in preview panels once
         window.dispatchEvent(new CustomEvent('file-saved'));
       }
     }, 500);
 
     return () => clearTimeout(timer);
-  }, [tabs, autoSave]);
+  }, [tabs, autoSave, hotReload]);
 
   const toggleTheme = useCallback(() => {
-    setTheme(prev => prev === 'dark' ? 'light' : 'dark');
+    setTheme(prev => prev === 'dark' ? 'light' : prev === 'light' ? 'system' : 'dark');
   }, []);
 
   useMonitoring(user, isOnline, activeTabPath || '');
@@ -154,11 +178,13 @@ export default function IDE() {
       setTabs((prev) => prev.map((t) =>
         t.path === activeTab.path ? { ...t, isDirty: false } : t
       ));
-      window.dispatchEvent(new CustomEvent('file-saved'));
+      if (hotReload) {
+        window.dispatchEvent(new CustomEvent('file-saved'));
+      }
     } catch (err) {
       console.error('Failed to save file:', err);
     }
-  }, [activeTab]);
+  }, [activeTab, hotReload]);
 
   const updateContent = useCallback((path: string, content: string) => {
     setTabs((prev) => prev.map((t) =>
@@ -250,6 +276,7 @@ export default function IDE() {
         isDirty={activeTab?.isDirty || false}
         theme={theme}
         onToggleTheme={toggleTheme}
+        onOpenSettings={() => setIsSettingsOpen(true)}
       />
       <div className="ide-body">
         <PanelGroup direction="horizontal" autoSaveId="ide-layout">
@@ -297,6 +324,16 @@ export default function IDE() {
           )}
         </PanelGroup>
       </div>
+      <SettingsModal 
+        isOpen={isSettingsOpen} 
+        onClose={() => setIsSettingsOpen(false)} 
+        autoSave={autoSave} 
+        onAutoSaveChange={setAutoSave} 
+        hotReload={hotReload} 
+        onHotReloadChange={setHotReload} 
+        theme={theme} 
+        onThemeChange={setTheme} 
+      />
     </div>
   );
 }

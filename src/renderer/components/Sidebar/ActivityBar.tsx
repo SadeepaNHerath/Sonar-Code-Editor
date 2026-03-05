@@ -20,6 +20,7 @@ interface ActivityBarProps {
   isDirty: boolean;
   theme?: string;
   onToggleTheme?: () => void;
+  onOpenSettings?: () => void;
 }
 
 export default function ActivityBar({
@@ -27,7 +28,7 @@ export default function ActivityBar({
   showPreviewRightPanel, onTogglePreviewRightPanel,
   isPreviewInTab, onTogglePreviewTab,
   onToggleExplorer, showExplorer, onLogout, isDirty,
-  theme = 'dark', onToggleTheme = () => {}
+  theme = 'dark', onToggleTheme = () => {}, onOpenSettings = () => {}
 }: ActivityBarProps) {
   const [showPreviewMenu, setShowPreviewMenu] = useState(false);
   const previewMenuRef = useRef<HTMLDivElement>(null);
@@ -120,8 +121,12 @@ export default function ActivityBar({
           <span className={`status-dot ${isOnline ? 'online' : 'offline'}`} />
         </div>
         
-        <button className="activity-action" onClick={onToggleTheme} title={theme === 'dark' ? "Switch to Light Mode" : "Switch to Dark Mode"}>
-          {theme === 'dark' ? <Sun size={22} strokeWidth={1.5} /> : <Moon size={22} strokeWidth={1.5} />}
+        <button className="activity-action" onClick={onOpenSettings} title="Settings">
+          <Settings size={22} strokeWidth={1.5} />
+        </button>
+
+        <button className="activity-action" onClick={onToggleTheme} title={`Theme: ${theme.charAt(0).toUpperCase() + theme.slice(1)}`}>
+          {theme === 'dark' ? <Moon size={22} strokeWidth={1.5} /> : theme === 'light' ? <Sun size={22} strokeWidth={1.5} /> : <Monitor size={22} strokeWidth={1.5} />}
         </button>
 
         <div className="user-avatar" title={`Team: ${teamName}`}>

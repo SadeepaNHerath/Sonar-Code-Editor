@@ -330,33 +330,7 @@ export default function FileTree({ workspaceRoot, onOpenFolder, onFileClick, act
       <div className="tree-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '4px', overflow: 'hidden' }}>
         <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginRight: '8px' }}>Explorer</span>
         <div className="tree-actions" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0, flexWrap: 'wrap' }}>
-            <span className="auto-save-text" style={{ fontSize: '10px', color: 'var(--text-muted)', userSelect: 'none' }}>AUTO SAVE</span>
-            <div 
-              onClick={(e) => { e.stopPropagation(); onAutoSaveChange(!autoSave); }}
-              style={{
-                width: '26px',
-                height: '14px',
-                background: autoSave ? 'var(--accent)' : 'var(--bg-hover)',
-                borderRadius: '8px',
-                position: 'relative',
-                cursor: 'pointer',
-                transition: 'background 0.2s ease',
-                border: `1px solid ${autoSave ? 'var(--accent)' : 'var(--border)'}`
-              }}
-              title="Toggle Auto Save"
-            >
-              <div style={{
-                width: '10px',
-                height: '10px',
-                background: autoSave ? '#ffffff' : 'var(--text-muted)',
-                borderRadius: '50%',
-                position: 'absolute',
-                top: '1px',
-                left: autoSave ? '13px' : '1px',
-                transition: 'left 0.2s ease, background 0.2s ease',
-                boxShadow: '0 1px 2px rgba(0,0,0,0.2)'
-              }} />
-            </div>
+            
           </div>
         </div>
         <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)' }}>
@@ -399,33 +373,6 @@ export default function FileTree({ workspaceRoot, onOpenFolder, onFileClick, act
           >
             <FolderPlus size={14} />
           </button>
-          <span className="auto-save-text" style={{ fontSize: '10px', color: 'var(--text-muted)', userSelect: 'none' }}>AUTO SAVE</span>
-          <div 
-            onClick={(e) => { e.stopPropagation(); onAutoSaveChange(!autoSave); }}
-            style={{
-              width: '26px',
-              height: '14px',
-              background: autoSave ? 'var(--accent)' : 'var(--bg-hover)',
-              borderRadius: '8px',
-              position: 'relative',
-              cursor: 'pointer',
-              transition: 'background 0.2s ease',
-              border: `1px solid ${autoSave ? 'var(--accent)' : 'var(--border)'}`
-            }}
-            title="Toggle Auto Save"
-          >
-            <div style={{
-              width: '10px',
-              height: '10px',
-              background: autoSave ? '#ffffff' : 'var(--text-muted)',
-              borderRadius: '50%',
-              position: 'absolute',
-              top: '1px',
-              left: autoSave ? '13px' : '1px',
-              transition: 'left 0.2s ease, background 0.2s ease',
-              boxShadow: '0 1px 2px rgba(0,0,0,0.2)'
-            }} />
-          </div>
         </div>
       </div>
       <div className="tree-content">
