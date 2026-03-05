@@ -47,6 +47,24 @@
   color: var(--text-primary);
 }
 
+.tree-action-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 3px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.tree-action-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
 .tree-content {
   flex: 1;
   overflow-y: auto;

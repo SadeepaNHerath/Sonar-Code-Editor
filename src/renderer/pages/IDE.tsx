@@ -48,6 +48,7 @@ export default function IDE() {
   const [showExplorer, setShowExplorer] = useState(true);
   const [theme, setTheme] = useState(() => localStorage.getItem('ide-theme') || 'dark');
   const [autoSave, setAutoSave] = useState(() => localStorage.getItem('ide-autosave') === 'true');
+  const [newFileTrigger, setNewFileTrigger] = useState(0);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -202,6 +203,10 @@ export default function IDE() {
   // Keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
+        e.preventDefault();
+        setNewFileTrigger((v) => v + 1);
+      }
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
         saveFile();
@@ -249,6 +254,8 @@ export default function IDE() {
                   activeFilePath={activeTabPath}
                   autoSave={autoSave}
                   onAutoSaveChange={setAutoSave}
+                  onFileOpened={openFile}
+                  newFileTrigger={newFileTrigger}
                 />
               </Panel>
               <PanelResizeHandle className="resize-handle" />

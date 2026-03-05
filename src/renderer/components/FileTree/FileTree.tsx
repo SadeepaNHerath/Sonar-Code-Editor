@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { ChevronRight, ChevronDown, Folder, File, FileCode2, FileJson, FileText, FileImage, Terminal, Database, ShieldAlert } from 'lucide-react';
+import { ChevronRight, ChevronDown, Folder, File, FileCode2, FileJson, FileText, FileImage, Terminal, Database, ShieldAlert, FilePlus, FolderPlus } from 'lucide-react';
 import { FileNode } from '../../../shared/types';
 import './FileTree.css';
 
@@ -96,9 +96,10 @@ interface FileTreeNodeProps {
   onSetCreating: (item: CreatingItem | null) => void;
   selectedFolder: string | null;
   onSelectFolder: (path: string) => void;
+  onFileOpened: (path: string, name: string) => void;
 }
 
-function FileTreeNode({ node, depth, activeFilePath, onFileClick, onRefresh, workspaceRoot, creatingItem, onSetCreating, selectedFolder, onSelectFolder }: FileTreeNodeProps) {
+function FileTreeNode({ node, depth, activeFilePath, onFileClick, onRefresh, workspaceRoot, creatingItem, onSetCreating, selectedFolder, onSelectFolder, onFileOpened }: FileTreeNodeProps) {
   const [expanded, setExpanded] = useState(depth === 0);
   const [children, setChildren] = useState<FileNode[]>(node.children || []);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
@@ -153,11 +154,14 @@ function FileTreeNode({ node, depth, activeFilePath, onFileClick, onRefresh, wor
     const fullPath = `${creatingItem.parentPath}/${name}`;
     if (creatingItem.type === 'file') {
       await window.electronAPI.fs.createFile(fullPath);
+      onSetCreating(null);
+      await loadChildren();
+      onFileOpened(fullPath, name);
     } else {
       await window.electronAPI.fs.createFolder(fullPath);
+      onSetCreating(null);
+      await loadChildren();
     }
-    onSetCreating(null);
-    await loadChildren();
   };
 
   const handleDelete = async () => {
@@ -199,7 +203,8 @@ function FileTreeNode({ node, depth, activeFilePath, onFileClick, onRefresh, wor
       <div
         className={`tree-node ${isActive ? 'active' : ''} ${isSelected ? 'selected-folder' : ''}`}
         style={{ paddingLeft: `${depth * 16 + 8}px` }}
-        onClick={() => {
+        onClick={(e) => {
+          e.stopPropagation();
           if (node.type === 'file') onFileClick(node.path, node.name);
           else {
             onSelectFolder(node.path);
@@ -263,6 +268,7 @@ function FileTreeNode({ node, depth, activeFilePath, onFileClick, onRefresh, wor
               onSetCreating={onSetCreating}
               selectedFolder={selectedFolder}
               onSelectFolder={onSelectFolder}
+              onFileOpened={onFileOpened}
             />
           ))}
         </div>
@@ -278,12 +284,31 @@ interface FileTreeProps {
   activeFilePath: string | null;
   autoSave: boolean;
   onAutoSaveChange: (autoSave: boolean) => void;
+  onFileOpened?: (path: string, name: string) => void;
+  newFileTrigger?: number;
 }
 
-export default function FileTree({ workspaceRoot, onOpenFolder, onFileClick, activeFilePath, autoSave, onAutoSaveChange }: FileTreeProps) {
+export default function FileTree({ workspaceRoot, onOpenFolder, onFileClick, activeFilePath, autoSave, onAutoSaveChange, onFileOpened, newFileTrigger }: FileTreeProps) {
   const [rootNodes, setRootNodes] = useState<FileNode[]>([]);
   const [creatingItem, setCreatingItem] = useState<CreatingItem | null>(null);
   const [selectedFolder, setSelectedFolder] = useState<string | null>(workspaceRoot);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!newFileTrigger || !workspaceRoot) return;
+    setCreatingItem({ type: 'file', parentPath: selectedFolder ?? workspaceRoot });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [newFileTrigger]);
+
+  useEffect(() => {
+    const handleMouseDown = (e: MouseEvent) => {
+      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+        setSelectedFolder(null);
+      }
+    };
+    document.addEventListener('mousedown', handleMouseDown);
+    return () => document.removeEventListener('mousedown', handleMouseDown);
+  }, []);
 
   const loadRoot = useCallback(async () => {
     if (!workspaceRoot) return;
@@ -336,28 +361,44 @@ export default function FileTree({ workspaceRoot, onOpenFolder, onFileClick, act
         </div>
         <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)' }}>
           <p style={{ marginBottom: '10px' }}>No folder opened</p>
-          <button
-            onClick={onOpenFolder}
-            style={{
-              padding: '6px 12px',
-              background: 'var(--accent)',
-              color: 'white',
-              borderRadius: '4px',
-              cursor: 'pointer'
-            }}
-          >
-            Open Folder
-          </button>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <button
+              onClick={onOpenFolder}
+              style={{
+                padding: '6px 12px',
+                background: 'var(--accent)',
+                color: 'white',
+                borderRadius: '4px',
+                cursor: 'pointer'
+              }}
+            >
+              Open Folder
+            </button>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="file-tree-panel" onClick={() => setSelectedFolder(workspaceRoot)}>
+    <div ref={panelRef} className="file-tree-panel" onClick={() => setSelectedFolder(workspaceRoot)}>
       <div className="tree-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <span>Explorer</span>
-        <div className="tree-actions" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div className="tree-actions" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <button
+            className="tree-action-btn"
+            title="New File"
+            onClick={(e) => { e.stopPropagation(); setCreatingItem({ type: 'file', parentPath: selectedFolder ?? workspaceRoot }); }}
+          >
+            <FilePlus size={14} />
+          </button>
+          <button
+            className="tree-action-btn"
+            title="New Folder"
+            onClick={(e) => { e.stopPropagation(); setCreatingItem({ type: 'folder', parentPath: selectedFolder ?? workspaceRoot }); }}
+          >
+            <FolderPlus size={14} />
+          </button>
           <span style={{ fontSize: '10px', color: 'var(--text-muted)', userSelect: 'none' }}>AUTO SAVE</span>
           <div 
             onClick={(e) => { e.stopPropagation(); onAutoSaveChange(!autoSave); }}
@@ -396,11 +437,14 @@ export default function FileTree({ workspaceRoot, onOpenFolder, onFileClick, act
               const fullPath = `${workspaceRoot}/${name}`;
               if (creatingItem.type === 'file') {
                 await window.electronAPI.fs.createFile(fullPath);
+                setCreatingItem(null);
+                loadRoot();
+                onFileOpened?.(fullPath, name);
               } else {
                 await window.electronAPI.fs.createFolder(fullPath);
+                setCreatingItem(null);
+                loadRoot();
               }
-              setCreatingItem(null);
-              loadRoot();
             }}
             onCancel={() => setCreatingItem(null)}
           />
@@ -418,6 +462,7 @@ export default function FileTree({ workspaceRoot, onOpenFolder, onFileClick, act
             onSetCreating={handleSetCreating}
             selectedFolder={selectedFolder}
             onSelectFolder={setSelectedFolder}
+            onFileOpened={onFileOpened ?? (() => {})}
           />
         ))}
       </div>
