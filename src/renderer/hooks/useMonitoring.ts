@@ -6,12 +6,6 @@ import { HeartbeatPayload } from '../../shared/types';
 
 export function useMonitoring(user: Team | null, isOnline: boolean, currentFile: string) {
   const currentFileRef = useRef(currentFile);
-  const isOnlineRef = useRef(isOnline);
-
-  // Keep refs in sync so heartbeat handler always reads latest values
-  useEffect(() => {
-    isOnlineRef.current = isOnline;
-  }, [isOnline]);
 
   useEffect(() => {
     currentFileRef.current = currentFile;
@@ -33,19 +27,18 @@ export function useMonitoring(user: Team | null, isOnline: boolean, currentFile:
 
     if (eventsAPI) {
       eventsAPI.onHeartbeat(async (payload: HeartbeatPayload) => {
-        if (isOnlineRef.current) {
-          await createActivityLog(payload);
-          await updateSessionLastSeen(payload.teamId);
-        } else {
+        // Run independently — session update must not be blocked by activity log failure
+        const logResult = createActivityLog(payload).catch(() => 'failed');
+        const sessionResult = updateSessionLastSeen(payload.teamId).catch(() => 'failed');
+        const [logStatus, sessionStatus] = await Promise.all([logResult, sessionResult]);
+        if (logStatus === 'failed' && sessionStatus === 'failed') {
           enqueueLog({ type: 'activityLog', payload, queuedAt: new Date().toISOString() });
         }
       });
 
       eventsAPI.onFlushQueue(async (queue: HeartbeatPayload[]) => {
         for (const item of queue) {
-          if (isOnlineRef.current) {
-            await createActivityLog(item).catch(() => {});
-          }
+          await createActivityLog(item).catch(() => {});
         }
       });
     }

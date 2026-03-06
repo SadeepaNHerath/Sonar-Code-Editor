@@ -55,6 +55,7 @@ export class MonitoringService {
         currentFile: this.currentFile,
         status: 'offline',
         timestamp: new Date().toISOString(),
+        appName: 'DevWatch IDE',
       };
       this.mainWindow.webContents.send('monitoring:heartbeat', payload);
     }
@@ -70,6 +71,7 @@ export class MonitoringService {
       currentFile: this.currentFile,
       status: 'online',
       timestamp: new Date().toISOString(),
+      appName: 'DevWatch IDE',
     };
 
     if (this.mainWindow && !this.mainWindow.isDestroyed()) {
