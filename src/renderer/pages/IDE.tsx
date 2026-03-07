@@ -363,71 +363,6 @@ function IDEContent() {
     collaboration.shareWorkspaceWithFiles,
   ]);
 
-  // Listen for file operations from collaboration peers
-  useEffect(() => {
-    if (!collaboration.isActive || !workspaceRoot) return;
-
-    const unsubFileOp = collaboration.onFileOperation(
-      async (op: FileOperation) => {
-        const absPath = `${workspaceRoot}/${op.relativePath}`;
-        console.log("Applying remote file operation:", op.type, absPath);
-
-        try {
-          switch (op.type) {
-            case "create-file": {
-              // Ensure parent directory exists
-              const parentDir = absPath.substring(0, absPath.lastIndexOf("/"));
-              try {
-                await window.electronAPI.fs.createFolder(parentDir);
-              } catch {
-                // Parent might already exist
-              }
-              await window.electronAPI.fs.createFile(absPath);
-              if (op.content) {
-                await window.electronAPI.fs.writeFile(absPath, op.content);
-              }
-              break;
-            }
-            case "create-folder": {
-              await window.electronAPI.fs.createFolder(absPath);
-              break;
-            }
-            case "delete": {
-              await window.electronAPI.fs.deleteItem(absPath);
-              // Close any open tabs for the deleted path
-              handleFileDeleted(absPath, op.isDirectory ? "directory" : "file");
-              break;
-            }
-            case "rename": {
-              if (op.newRelativePath) {
-                const newAbsPath = `${workspaceRoot}/${op.newRelativePath}`;
-                await window.electronAPI.fs.renameItem(absPath, newAbsPath);
-                // Update any open tabs for the renamed path
-                handleFileRenamed(absPath, newAbsPath);
-              }
-              break;
-            }
-          }
-        } catch (err) {
-          console.error("Failed to apply remote file operation:", err);
-        }
-
-        // Trigger file tree refresh
-        setFileTreeRefreshKey((k) => k + 1);
-      },
-    );
-
-    return () => {
-      unsubFileOp();
-    };
-  }, [
-    collaboration.isActive,
-    collaboration.onFileOperation,
-    workspaceRoot,
-    handleFileDeleted,
-    handleFileRenamed,
-  ]);
-
   const toggleTheme = useCallback(() => {
     setTheme((prev) =>
       prev === "dark" ? "light" : prev === "light" ? "system" : "dark",
@@ -682,6 +617,71 @@ function IDEContent() {
     },
     [collaboration.isActive, collaboration.broadcastFileOp, workspaceRoot],
   );
+
+  // Listen for file operations from collaboration peers
+  useEffect(() => {
+    if (!collaboration.isActive || !workspaceRoot) return;
+
+    const unsubFileOp = collaboration.onFileOperation(
+      async (op: FileOperation) => {
+        const absPath = `${workspaceRoot}/${op.relativePath}`;
+        console.log("Applying remote file operation:", op.type, absPath);
+
+        try {
+          switch (op.type) {
+            case "create-file": {
+              // Ensure parent directory exists
+              const parentDir = absPath.substring(0, absPath.lastIndexOf("/"));
+              try {
+                await window.electronAPI.fs.createFolder(parentDir);
+              } catch {
+                // Parent might already exist
+              }
+              await window.electronAPI.fs.createFile(absPath);
+              if (op.content) {
+                await window.electronAPI.fs.writeFile(absPath, op.content);
+              }
+              break;
+            }
+            case "create-folder": {
+              await window.electronAPI.fs.createFolder(absPath);
+              break;
+            }
+            case "delete": {
+              await window.electronAPI.fs.deleteItem(absPath);
+              // Close any open tabs for the deleted path
+              handleFileDeleted(absPath, op.isDirectory ? "directory" : "file");
+              break;
+            }
+            case "rename": {
+              if (op.newRelativePath) {
+                const newAbsPath = `${workspaceRoot}/${op.newRelativePath}`;
+                await window.electronAPI.fs.renameItem(absPath, newAbsPath);
+                // Update any open tabs for the renamed path
+                handleFileRenamed(absPath, newAbsPath);
+              }
+              break;
+            }
+          }
+        } catch (err) {
+          console.error("Failed to apply remote file operation:", err);
+        }
+
+        // Trigger file tree refresh
+        setFileTreeRefreshKey((k) => k + 1);
+      },
+    );
+
+    return () => {
+      unsubFileOp();
+    };
+  }, [
+    collaboration.isActive,
+    collaboration.onFileOperation,
+    workspaceRoot,
+    handleFileDeleted,
+    handleFileRenamed,
+  ]);
 
   const openFolder = useCallback(async () => {
     const result = await window.electronAPI.fs.openFolderDialog();
