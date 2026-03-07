@@ -16,7 +16,9 @@ export default function CollaborationModal({
   const collaboration = useCollaboration();
 
   const handleSessionStart = useCallback(
-    async (mode: "host" | "client", hostIp?: string) => {
+    async (mode: "host" | "client", userName: string, hostIp?: string) => {
+      // Set the userName in context before starting
+      collaboration.setUserName(userName);
       if (mode === "host") {
         await collaboration.startHost();
       } else if (hostIp) {

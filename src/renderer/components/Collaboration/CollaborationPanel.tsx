@@ -16,7 +16,7 @@ import { CollaborationStatus, CollaborationUser } from "../../../shared/types";
 import "./CollaborationPanel.css";
 
 interface CollaborationPanelProps {
-  onSessionStart: (mode: "host" | "client", hostIp?: string) => void;
+  onSessionStart: (mode: "host" | "client", userName: string, hostIp?: string) => void;
   onSessionStop: () => void;
   collaborationStatus: CollaborationStatus | null;
 }
@@ -73,7 +73,7 @@ export default function CollaborationPanel({
     localStorage.setItem("collaborationUserName", userName);
 
     try {
-      await onSessionStart("host");
+      await onSessionStart("host", userName);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -96,7 +96,7 @@ export default function CollaborationPanel({
     localStorage.setItem("collaborationUserName", userName);
 
     try {
-      await onSessionStart("client", hostIp);
+      await onSessionStart("client", userName, hostIp);
     } catch (err) {
       setError((err as Error).message);
     } finally {
