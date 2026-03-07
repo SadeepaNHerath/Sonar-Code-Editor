@@ -12,6 +12,15 @@ import { MonacoBinding } from "y-monaco";
 import type { editor } from "monaco-editor";
 import { CollaborationStatus, CollaborationUser } from "../../shared/types";
 
+// Shared file metadata
+export interface SharedFile {
+  path: string;
+  name: string;
+  content: string;
+  language: string;
+  type?: "file" | "image";
+}
+
 interface CollaborationContextValue {
   isActive: boolean;
   status: CollaborationStatus | null;
@@ -28,6 +37,13 @@ interface CollaborationContextValue {
   unbindEditor: () => void;
   ydoc: Y.Doc | null;
   provider: WebsocketProvider | null;
+  // Shared file methods
+  shareFile: (file: SharedFile) => void;
+  getSharedFiles: () => SharedFile[];
+  setActiveSharedFile: (path: string) => void;
+  activeSharedFile: string | null;
+  onSharedFilesChange: (callback: (files: SharedFile[]) => void) => () => void;
+  onActiveFileChange: (callback: (path: string | null) => void) => () => void;
 }
 
 const CollaborationContext = createContext<CollaborationContextValue | null>(
@@ -61,6 +77,7 @@ export function CollaborationProvider({
   const [userName, setUserName] = useState(() => {
     return localStorage.getItem("collaborationUserName") || "";
   });
+  const [activeSharedFile, setActiveSharedFileState] = useState<string | null>(null);
 
   // Refs to store Yjs instances (persist across renders)
   const ydocRef = useRef<Y.Doc | null>(null);
@@ -68,6 +85,10 @@ export function CollaborationProvider({
   const bindingRef = useRef<MonacoBinding | null>(null);
   const currentFileRef = useRef<string | null>(null);
   const userColorRef = useRef<string>(generateUserColor());
+  
+  // Shared file callbacks
+  const sharedFilesCallbacksRef = useRef<Set<(files: SharedFile[]) => void>>(new Set());
+  const activeFileCallbacksRef = useRef<Set<(path: string | null) => void>>(new Set());
 
   // Save username to localStorage when it changes
   useEffect(() => {
@@ -150,6 +171,25 @@ export function CollaborationProvider({
         color: userColorRef.current,
       });
 
+      // Initialize shared files map and observe changes
+      const sharedFilesMap = ydoc.getMap<SharedFile>("sharedFiles");
+      const activeFileText = ydoc.getText("activeFile");
+      
+      // Observe shared files changes
+      sharedFilesMap.observe(() => {
+        const files = Array.from(sharedFilesMap.values());
+        console.log("Shared files updated:", files.map(f => f.name).join(", "));
+        sharedFilesCallbacksRef.current.forEach(cb => cb(files));
+      });
+      
+      // Observe active file changes
+      activeFileText.observe(() => {
+        const path = activeFileText.toString() || null;
+        console.log("Active shared file:", path);
+        setActiveSharedFileState(path);
+        activeFileCallbacksRef.current.forEach(cb => cb(path));
+      });
+
       // Helper to update user list from awareness states
       const updateUserList = () => {
         const states = Array.from(provider.awareness.getStates().entries());
@@ -183,6 +223,18 @@ export function CollaborationProvider({
         console.log("Yjs sync status:", isSynced);
         if (isSynced) {
           updateUserList();
+          // Notify about existing shared files after sync
+          const files = Array.from(sharedFilesMap.values());
+          if (files.length > 0) {
+            console.log("Synced shared files:", files.map(f => f.name).join(", "));
+            sharedFilesCallbacksRef.current.forEach(cb => cb(files));
+          }
+          // Notify about active file
+          const activePath = activeFileText.toString() || null;
+          if (activePath) {
+            setActiveSharedFileState(activePath);
+            activeFileCallbacksRef.current.forEach(cb => cb(activePath));
+          }
         }
       });
 
@@ -319,6 +371,64 @@ export function CollaborationProvider({
     currentFileRef.current = null;
   }, []);
 
+  // Share a file with all connected users
+  const shareFile = useCallback((file: SharedFile) => {
+    if (!ydocRef.current) {
+      console.warn("Cannot share file: No Yjs document");
+      return;
+    }
+    const sharedFilesMap = ydocRef.current.getMap<SharedFile>("sharedFiles");
+    console.log(`Sharing file: ${file.name}`);
+    sharedFilesMap.set(file.path, file);
+  }, []);
+
+  // Get all shared files
+  const getSharedFiles = useCallback((): SharedFile[] => {
+    if (!ydocRef.current) return [];
+    const sharedFilesMap = ydocRef.current.getMap<SharedFile>("sharedFiles");
+    return Array.from(sharedFilesMap.values());
+  }, []);
+
+  // Set the active shared file (syncs to all users)
+  const setActiveSharedFile = useCallback((path: string) => {
+    if (!ydocRef.current) {
+      console.warn("Cannot set active file: No Yjs document");
+      return;
+    }
+    const activeFileText = ydocRef.current.getText("activeFile");
+    ydocRef.current.transact(() => {
+      activeFileText.delete(0, activeFileText.length);
+      activeFileText.insert(0, path);
+    });
+  }, []);
+
+  // Subscribe to shared files changes
+  const onSharedFilesChange = useCallback((callback: (files: SharedFile[]) => void) => {
+    sharedFilesCallbacksRef.current.add(callback);
+    // Immediately call with current files if available
+    if (ydocRef.current) {
+      const files = getSharedFiles();
+      if (files.length > 0) {
+        callback(files);
+      }
+    }
+    return () => {
+      sharedFilesCallbacksRef.current.delete(callback);
+    };
+  }, [getSharedFiles]);
+
+  // Subscribe to active file changes
+  const onActiveFileChange = useCallback((callback: (path: string | null) => void) => {
+    activeFileCallbacksRef.current.add(callback);
+    // Immediately call with current active file if available
+    if (activeSharedFile) {
+      callback(activeSharedFile);
+    }
+    return () => {
+      activeFileCallbacksRef.current.delete(callback);
+    };
+  }, [activeSharedFile]);
+
   const value: CollaborationContextValue = {
     isActive: status?.isActive || false,
     status,
@@ -332,6 +442,13 @@ export function CollaborationProvider({
     unbindEditor,
     ydoc: ydocRef.current,
     provider: providerRef.current,
+    // Shared file methods
+    shareFile,
+    getSharedFiles,
+    setActiveSharedFile,
+    activeSharedFile,
+    onSharedFilesChange,
+    onActiveFileChange,
   };
 
   return (

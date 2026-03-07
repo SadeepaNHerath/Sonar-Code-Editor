@@ -177,6 +177,51 @@ function IDEContent() {
     return () => clearTimeout(timer);
   }, [tabs, autoSave, hotReload]);
 
+  // Listen for shared files from collaboration
+  useEffect(() => {
+    if (!collaboration.isActive) return;
+
+    // Subscribe to shared file changes
+    const unsubFiles = collaboration.onSharedFilesChange((sharedFiles) => {
+      console.log("Received shared files:", sharedFiles.map(f => f.name).join(", "));
+      
+      // Open any new shared files that we don't have open yet
+      for (const file of sharedFiles) {
+        const existingTab = tabs.find(t => t.path === file.path);
+        if (!existingTab && file.type !== "image") {
+          // Add the file as a tab (don't read from filesystem)
+          const newTab: OpenTab = {
+            path: file.path,
+            name: file.name,
+            content: file.content,
+            isDirty: false,
+            language: file.language,
+            isPreviewFile: true,
+          };
+          setTabs(prev => {
+            // Check again in case of race condition
+            if (prev.find(t => t.path === file.path)) return prev;
+            const next = prev.filter(t => !t.isPreviewFile || t.isDirty);
+            return [...next, newTab];
+          });
+        }
+      }
+    });
+
+    // Subscribe to active file changes
+    const unsubActive = collaboration.onActiveFileChange((path) => {
+      if (path && path !== activeTabPath) {
+        console.log("Switching to shared active file:", path);
+        setActiveTabPath(path);
+      }
+    });
+
+    return () => {
+      unsubFiles();
+      unsubActive();
+    };
+  }, [collaboration.isActive, collaboration.onSharedFilesChange, collaboration.onActiveFileChange, tabs, activeTabPath]);
+
   const toggleTheme = useCallback(() => {
     setTheme((prev) =>
       prev === "dark" ? "light" : prev === "light" ? "system" : "dark",
@@ -189,10 +234,14 @@ function IDEContent() {
   const activeTab = tabs.find((t) => t.path === activeTabPath) || null;
 
   const openFile = useCallback(
-    async (filePath: string, fileName: string) => {
+    async (filePath: string, fileName: string, fromCollaboration = false) => {
       const existing = tabs.find((t) => t.path === filePath);
       if (existing) {
         setActiveTabPath(filePath);
+        // If collaboration is active and we're opening locally, sync active file
+        if (collaboration.isActive && !fromCollaboration) {
+          collaboration.setActiveSharedFile(filePath);
+        }
         return;
       }
       try {
@@ -209,7 +258,20 @@ function IDEContent() {
             isPreviewFile: true,
           };
         } else {
-          const content = await window.electronAPI.fs.readFile(filePath);
+          // Check if we have content from collaboration
+          const sharedFiles = collaboration.getSharedFiles();
+          const sharedFile = sharedFiles.find(f => f.path === filePath);
+          
+          let content: string;
+          if (sharedFile && sharedFile.content) {
+            // Use content from collaboration
+            content = sharedFile.content;
+            console.log(`Opening shared file: ${fileName}`);
+          } else {
+            // Read from local filesystem
+            content = await window.electronAPI.fs.readFile(filePath);
+          }
+          
           tab = {
             path: filePath,
             name: fileName,
@@ -218,17 +280,33 @@ function IDEContent() {
             language: getLanguage(fileName),
             isPreviewFile: true,
           };
+          
+          // Share file with collaborators if active and not from collaboration
+          if (collaboration.isActive && !fromCollaboration) {
+            collaboration.shareFile({
+              path: filePath,
+              name: fileName,
+              content,
+              language: getLanguage(fileName),
+              type: "file",
+            });
+          }
         }
         setTabs((prev) => {
           const next = prev.filter((t) => !t.isPreviewFile || t.isDirty);
           return [...next, tab];
         });
         setActiveTabPath(filePath);
+        
+        // Sync active file in collaboration
+        if (collaboration.isActive && !fromCollaboration) {
+          collaboration.setActiveSharedFile(filePath);
+        }
       } catch (err) {
         console.error("Failed to open file:", err);
       }
     },
-    [tabs],
+    [tabs, collaboration],
   );
 
   const closeTab = useCallback(
