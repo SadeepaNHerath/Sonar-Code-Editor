@@ -159,14 +159,28 @@ class CollaborationManager {
           
           console.log(`Room ${roomName} now has ${room.clients.size} client(s)`);
           
-          // Send all existing awareness states to the new client
-          // This ensures new joiners see all currently connected users
-          room.awarenessStates.forEach((awarenessData, clientWs) => {
-            if (clientWs !== ws && ws.readyState === WebSocket.OPEN) {
-              console.log(`Sending existing awareness to new client (${awarenessData.length} bytes)`);
-              ws.send(awarenessData, { binary: true });
-            }
-          });
+          // When a new client joins, notify existing clients to resend their awareness
+          // This ensures the new client receives everyone's presence info
+          // We do this after a short delay to let the new client initialize
+          setTimeout(() => {
+            // Send all stored awareness states to the new client
+            room.awarenessStates.forEach((awarenessData, clientWs) => {
+              if (clientWs !== ws && ws.readyState === WebSocket.OPEN) {
+                console.log(`Sending stored awareness to new client (${awarenessData.length} bytes)`);
+                ws.send(awarenessData, { binary: true });
+              }
+            });
+            
+            // Also ask existing clients to resend by broadcasting an awareness query from the new client
+            // This triggers y-websocket to respond with awareness updates
+            const awarenessQuery = Buffer.from([3]); // Message type 3 = awareness query
+            room.clients.forEach((client) => {
+              if (client !== ws && client.readyState === WebSocket.OPEN) {
+                console.log('Sending awareness query to existing client');
+                client.send(awarenessQuery, { binary: true });
+              }
+            });
+          }, 100);
 
           // Handle messages - broadcast to all other clients in the same room
           // y-websocket handles all the sync protocol in binary format

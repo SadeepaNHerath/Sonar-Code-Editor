@@ -93,6 +93,7 @@ export function CollaborationProvider({
   const providerRef = useRef<WebsocketProvider | null>(null);
   const bindingRef = useRef<MonacoBinding | null>(null);
   const currentFileRef = useRef<string | null>(null);
+  const refreshIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const userColorRef = useRef<string>(generateUserColor());
 
   // Shared file callbacks
@@ -141,6 +142,12 @@ export function CollaborationProvider({
   }, []);
 
   const cleanup = useCallback(() => {
+    // Clean up refresh interval
+    if (refreshIntervalRef.current) {
+      clearInterval(refreshIntervalRef.current);
+      refreshIntervalRef.current = null;
+    }
+
     // Clean up Monaco binding
     if (bindingRef.current) {
       bindingRef.current.destroy();
@@ -237,6 +244,14 @@ export function CollaborationProvider({
 
       // Update user list immediately with local user
       updateUserList();
+
+      // Also refresh user list periodically to catch any missed updates
+      const refreshInterval = setInterval(() => {
+        if (provider.wsconnected) {
+          updateUserList();
+        }
+      }, 2000);
+      refreshIntervalRef.current = refreshInterval;
 
       // Connection status logging
       provider.on("status", (event: { status: string }) => {
