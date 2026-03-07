@@ -16,7 +16,11 @@ import { CollaborationStatus, CollaborationUser } from "../../../shared/types";
 import "./CollaborationPanel.css";
 
 interface CollaborationPanelProps {
-  onSessionStart: (mode: "host" | "client", userName: string, hostIp?: string) => void;
+  onSessionStart: (
+    mode: "host" | "client",
+    userName: string,
+    hostIp?: string,
+  ) => void;
   onSessionStop: () => void;
   collaborationStatus: CollaborationStatus | null;
 }
