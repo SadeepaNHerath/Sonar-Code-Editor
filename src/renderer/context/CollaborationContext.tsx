@@ -193,7 +193,7 @@ export function CollaborationProvider({
     }
 
     // Clean up injected cursor styles
-    const styleEl = document.getElementById('yjs-cursor-styles');
+    const styleEl = document.getElementById("yjs-cursor-styles");
     if (styleEl) {
       styleEl.remove();
     }
@@ -278,24 +278,28 @@ export function CollaborationProvider({
           }));
         console.log("Connected users:", users.map((u) => u.name).join(", "));
         setConnectedUsers(users);
-        
+
         // Inject CSS for remote cursor colors and labels
         injectCursorStyles(states);
       };
-      
+
       // Inject dynamic CSS for cursor colors and user name labels
-      const injectCursorStyles = (states: [number, { user?: { name: string; color: string } }][]) => {
-        const styleId = 'yjs-cursor-styles';
+      const injectCursorStyles = (
+        states: [number, { user?: { name: string; color: string } }][],
+      ) => {
+        const styleId = "yjs-cursor-styles";
         let styleEl = document.getElementById(styleId);
         if (!styleEl) {
-          styleEl = document.createElement('style');
+          styleEl = document.createElement("style");
           styleEl.id = styleId;
           document.head.appendChild(styleEl);
         }
-        
+
         const localClientId = provider.awareness.clientID;
         const css = states
-          .filter(([clientId, state]) => state.user && clientId !== localClientId)
+          .filter(
+            ([clientId, state]) => state.user && clientId !== localClientId,
+          )
           .map(([clientId, state]) => {
             const { name, color } = state.user!;
             return `
@@ -324,8 +328,8 @@ export function CollaborationProvider({
               }
             `;
           })
-          .join('\n');
-        
+          .join("\n");
+
         styleEl.textContent = css;
       };
 
@@ -515,14 +519,24 @@ export function CollaborationProvider({
       // - If Y.Text has content (from another user), SET the model to match it
       // - If Y.Text is empty but model has content (we're first), initialize Y.Text
       // - If both are empty, nothing to do
-      if (currentYTextContent.length > 0 && currentYTextContent !== currentModelContent) {
+      if (
+        currentYTextContent.length > 0 &&
+        currentYTextContent !== currentModelContent
+      ) {
         // Y.Text already has content from collaboration - sync model TO ytext
         // This must happen BEFORE creating binding to avoid conflicts
-        console.log(`Syncing model to collaborative content for: ${docName} (${currentYTextContent.length} chars)`);
+        console.log(
+          `Syncing model to collaborative content for: ${docName} (${currentYTextContent.length} chars)`,
+        );
         model.setValue(currentYTextContent);
-      } else if (currentYTextContent.length === 0 && currentModelContent.length > 0) {
+      } else if (
+        currentYTextContent.length === 0 &&
+        currentModelContent.length > 0
+      ) {
         // We're first to open this file - share our content
-        console.log(`Initializing collaborative document from local file: ${docName}`);
+        console.log(
+          `Initializing collaborative document from local file: ${docName}`,
+        );
         ytext.insert(0, currentModelContent);
       }
 
