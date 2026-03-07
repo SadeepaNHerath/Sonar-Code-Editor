@@ -177,58 +177,36 @@ function IDEContent() {
     return () => clearTimeout(timer);
   }, [tabs, autoSave, hotReload]);
 
-  // Listen for shared files from collaboration
+  // Listen for shared workspace from collaboration (for clients joining)
   useEffect(() => {
     if (!collaboration.isActive) return;
 
-    // Subscribe to shared file changes
-    const unsubFiles = collaboration.onSharedFilesChange((sharedFiles) => {
-      console.log(
-        "Received shared files:",
-        sharedFiles.map((f) => f.name).join(", "),
-      );
-
-      // Open any new shared files that we don't have open yet
-      for (const file of sharedFiles) {
-        const existingTab = tabs.find((t) => t.path === file.path);
-        if (!existingTab && file.type !== "image") {
-          // Add the file as a tab (don't read from filesystem)
-          const newTab: OpenTab = {
-            path: file.path,
-            name: file.name,
-            content: file.content,
-            isDirty: false,
-            language: file.language,
-            isPreviewFile: true,
-          };
-          setTabs((prev) => {
-            // Check again in case of race condition
-            if (prev.find((t) => t.path === file.path)) return prev;
-            const next = prev.filter((t) => !t.isPreviewFile || t.isDirty);
-            return [...next, newTab];
-          });
-        }
-      }
-    });
-
-    // Subscribe to active file changes
-    const unsubActive = collaboration.onActiveFileChange((path) => {
-      if (path && path !== activeTabPath) {
-        console.log("Switching to shared active file:", path);
-        setActiveTabPath(path);
+    const unsubWorkspace = collaboration.onWorkspaceChange((path) => {
+      if (path && path !== workspaceRoot) {
+        console.log("Received shared workspace:", path);
+        setWorkspaceRoot(path);
       }
     });
 
     return () => {
-      unsubFiles();
-      unsubActive();
+      unsubWorkspace();
     };
+  }, [collaboration.isActive, collaboration.onWorkspaceChange, workspaceRoot]);
+
+  // Share workspace when host opens a folder
+  useEffect(() => {
+    if (
+      collaboration.isActive &&
+      workspaceRoot &&
+      collaboration.status?.mode === "host"
+    ) {
+      collaboration.setSharedWorkspace(workspaceRoot);
+    }
   }, [
     collaboration.isActive,
-    collaboration.onSharedFilesChange,
-    collaboration.onActiveFileChange,
-    tabs,
-    activeTabPath,
+    collaboration.status?.mode,
+    workspaceRoot,
+    collaboration.setSharedWorkspace,
   ]);
 
   const toggleTheme = useCallback(() => {
@@ -243,14 +221,10 @@ function IDEContent() {
   const activeTab = tabs.find((t) => t.path === activeTabPath) || null;
 
   const openFile = useCallback(
-    async (filePath: string, fileName: string, fromCollaboration = false) => {
+    async (filePath: string, fileName: string) => {
       const existing = tabs.find((t) => t.path === filePath);
       if (existing) {
         setActiveTabPath(filePath);
-        // If collaboration is active and we're opening locally, sync active file
-        if (collaboration.isActive && !fromCollaboration) {
-          collaboration.setActiveSharedFile(filePath);
-        }
         return;
       }
       try {
@@ -267,19 +241,8 @@ function IDEContent() {
             isPreviewFile: true,
           };
         } else {
-          // Check if we have content from collaboration
-          const sharedFiles = collaboration.getSharedFiles();
-          const sharedFile = sharedFiles.find((f) => f.path === filePath);
-
-          let content: string;
-          if (sharedFile && sharedFile.content) {
-            // Use content from collaboration
-            content = sharedFile.content;
-            console.log(`Opening shared file: ${fileName}`);
-          } else {
-            // Read from local filesystem
-            content = await window.electronAPI.fs.readFile(filePath);
-          }
+          // Read from local filesystem
+          const content = await window.electronAPI.fs.readFile(filePath);
 
           tab = {
             path: filePath,
@@ -289,33 +252,17 @@ function IDEContent() {
             language: getLanguage(fileName),
             isPreviewFile: true,
           };
-
-          // Share file with collaborators if active and not from collaboration
-          if (collaboration.isActive && !fromCollaboration) {
-            collaboration.shareFile({
-              path: filePath,
-              name: fileName,
-              content,
-              language: getLanguage(fileName),
-              type: "file",
-            });
-          }
         }
         setTabs((prev) => {
           const next = prev.filter((t) => !t.isPreviewFile || t.isDirty);
           return [...next, tab];
         });
         setActiveTabPath(filePath);
-
-        // Sync active file in collaboration
-        if (collaboration.isActive && !fromCollaboration) {
-          collaboration.setActiveSharedFile(filePath);
-        }
       } catch (err) {
         console.error("Failed to open file:", err);
       }
     },
-    [tabs, collaboration],
+    [tabs],
   );
 
   const closeTab = useCallback(
