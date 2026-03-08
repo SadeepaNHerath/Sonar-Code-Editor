@@ -200,7 +200,6 @@ export function CollaborationProvider({
 
     // Clean up WebSocket provider
     if (providerRef.current) {
-      providerRef.current.disconnect();
       providerRef.current.destroy();
       providerRef.current = null;
     }
