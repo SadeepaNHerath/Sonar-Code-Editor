@@ -23,22 +23,57 @@ import "./FileTree.css";
 
 // Track global mouse interaction to distinguish programmatic focus steals from user clicks
 let isUserClicking = false;
+
+// ── Native keydown shield ─────────────────────────────────────────────
+// Monaco Editor registers global capture-phase keydown listeners that swallow
+// alphabetical keys when it thinks it owns focus (e.g. after a tab closes).
+// React's synthetic onKeyDown / onKeyDownCapture fire AFTER those native
+// capture listeners, so they never see the event.  The only reliable fix is
+// to intercept the event at the very top of the capture chain (window) BEFORE
+// Monaco, kill propagation, and handle Enter / Escape ourselves via a
+// callback registry keyed by the DOM element.
+const fileTreeInputCallbacks = new WeakMap<
+  HTMLElement,
+  { onSubmit: () => void; onCancel: () => void }
+>();
+
 if (typeof window !== "undefined") {
-  window.addEventListener("mousedown", () => { isUserClicking = true; }, true); 
-  window.addEventListener("mouseup", () => { isUserClicking = false; }, true);  
-  window.addEventListener("keydown", (e) => {
-    isUserClicking = true;
-    
-    // Shield FileTree inputs against global Monaco Editor capture keydown hooks
-    const target = e.target as HTMLElement | null;
-    if (
-      target &&
-      target.tagName === "INPUT" &&
-      (target.classList.contains("rename-input") || target.classList.contains("inline-create-input"))
-    ) {
+  window.addEventListener("mousedown", () => { isUserClicking = true; }, true);
+  window.addEventListener("mouseup", () => { isUserClicking = false; }, true);
+
+  // This MUST be the very first capture-phase keydown listener so it runs
+  // before Monaco's.  Because this module is imported early this is guaranteed.
+  window.addEventListener(
+    "keydown",
+    (e) => {
+      isUserClicking = true;
+
+      const target = e.target as HTMLElement | null;
+      if (
+        !target ||
+        target.tagName !== "INPUT" ||
+        !(target.classList.contains("rename-input") || target.classList.contains("inline-create-input"))
+      ) {
+        return; // Not our input – let the event flow normally
+      }
+
+      // Block Monaco (and every other capture listener) from seeing this event
       e.stopImmediatePropagation();
-    }
-  }, true);   
+
+      const cbs = fileTreeInputCallbacks.get(target);
+      if (e.key === "Enter" && cbs) {
+        e.preventDefault();
+        cbs.onSubmit();
+      } else if (e.key === "Escape" && cbs) {
+        e.preventDefault();
+        cbs.onCancel();
+      }
+      // All other keys (letters, backspace, delete …) just flow into the
+      // <input> via the browser's default behaviour – no further action needed.
+    },
+    true,
+  );
+
   window.addEventListener("keyup", () => { isUserClicking = false; }, true);
 }
 const isWindows = navigator.userAgent.toLowerCase().includes("win");
@@ -123,6 +158,30 @@ function InlineCreateInput({
     };
   }, []);
 
+  // Register native-level Enter / Escape callbacks so the global window
+  // capture listener can invoke them (React handlers are dead by that point).
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    fileTreeInputCallbacks.set(el, {
+      onSubmit: () => {
+        if (blurTimeoutRef.current) {
+          clearTimeout(blurTimeoutRef.current);
+          blurTimeoutRef.current = null;
+        }
+        handleSubmit();
+      },
+      onCancel: () => {
+        if (blurTimeoutRef.current) {
+          clearTimeout(blurTimeoutRef.current);
+          blurTimeoutRef.current = null;
+        }
+        onCancelRef.current();
+      },
+    });
+    return () => { fileTreeInputCallbacks.delete(el); };
+  });
+
   // Cleanup blur timeout on unmount
   useEffect(() => {
     return () => {
@@ -201,24 +260,6 @@ function InlineCreateInput({
         onFocus={handleFocus}
         onClick={(e) => e.stopPropagation()}
         onMouseDown={(e) => e.stopPropagation()}
-        onKeyDownCapture={(e) => {
-          e.stopPropagation();
-          if (e.key === "Enter") {
-            // Clear any pending blur timeout so we don't double-submit
-            if (blurTimeoutRef.current) {
-              clearTimeout(blurTimeoutRef.current);
-              blurTimeoutRef.current = null;
-            }
-            handleSubmit();
-          }
-          if (e.key === "Escape") {
-            if (blurTimeoutRef.current) {
-              clearTimeout(blurTimeoutRef.current);
-              blurTimeoutRef.current = null;
-            }
-            onCancelRef.current();
-          }
-        }}
       />
     </div>
   );
@@ -429,14 +470,35 @@ function FileTreeNode({
     }, 300);
   }, [newName, node.name, node.path]);
 
+  // Register native-level Enter / Escape callbacks for the rename input
   useEffect(() => {
     if (!renaming) return;
+    const el = renameInputRef.current;
+    if (el) {
+      fileTreeInputCallbacks.set(el, {
+        onSubmit: () => {
+          if (renameBlurTimeoutRef.current) {
+            clearTimeout(renameBlurTimeoutRef.current);
+            renameBlurTimeoutRef.current = null;
+          }
+          commitRename();
+        },
+        onCancel: () => {
+          if (renameBlurTimeoutRef.current) {
+            clearTimeout(renameBlurTimeoutRef.current);
+            renameBlurTimeoutRef.current = null;
+          }
+          setRenaming(false);
+        },
+      });
+    }
 
-    // cleanup timeouts when renaming finishes/cancels
+    // cleanup timeouts + callback registry when renaming finishes/cancels
     return () => {
       if (renameBlurTimeoutRef.current) clearTimeout(renameBlurTimeoutRef.current);
+      if (el) fileTreeInputCallbacks.delete(el);
     };
-  }, [renaming]);
+  }, [renaming, newName, node.name, node.path]);
 
   useEffect(() => {
     if (contextMenu) {
@@ -510,23 +572,6 @@ function FileTreeNode({
               e.target.select();
             }}
             onBlur={handleRenameBlur}
-            onKeyDownCapture={(e) => {
-              e.stopPropagation(); // Stop global handlers like Monaco from intercepting keystrokes
-              if (e.key === "Enter") {
-                if (renameBlurTimeoutRef.current) {
-                  clearTimeout(renameBlurTimeoutRef.current);
-                  renameBlurTimeoutRef.current = null;
-                }
-                commitRename();
-              }
-              if (e.key === "Escape") {
-                if (renameBlurTimeoutRef.current) {
-                  clearTimeout(renameBlurTimeoutRef.current);
-                  renameBlurTimeoutRef.current = null;
-                }
-                setRenaming(false);
-              }
-            }}
             onClick={(e) => e.stopPropagation()}
           />
         ) : (
