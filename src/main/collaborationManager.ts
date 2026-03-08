@@ -1,5 +1,6 @@
 import { execSync } from 'child_process';
 import * as dgram from 'dgram';
+import * as net from 'net';
 import WebSocket, { WebSocketServer } from 'ws';
 import * as http from 'http';
 import * as os from 'os';
@@ -48,21 +49,28 @@ class CollaborationManager {
   constructor() {}
 
   /**
-   * Check local network access by sending a UDP multicast packet.
-   * On macOS, this triggers the Local Network permission prompt if not yet granted.
+   * Check local network access.
+   * - macOS: sends a UDP multicast packet to trigger the Local Network permission prompt.
+   * - Windows: binds a temporary TCP server to trigger the Windows Firewall allow dialog.
    * Returns true if the network operation succeeded.
    */
   async checkLocalNetworkAccess(): Promise<boolean> {
-    if (process.platform !== 'darwin') {
-      return true;
+    if (process.platform === 'darwin') {
+      return this.checkMacOSLocalNetwork();
     }
+    if (process.platform === 'win32') {
+      return this.checkWindowsFirewall();
+    }
+    // Linux and others generally don't need a prompt
+    return true;
+  }
 
+  private checkMacOSLocalNetwork(): Promise<boolean> {
     return new Promise((resolve) => {
       const socket = dgram.createSocket({ type: 'udp4', reuseAddr: true });
       const message = Buffer.from('ping');
       const timeout = setTimeout(() => {
         try { socket.close(); } catch (_) { /* ignore */ }
-        // Timeout likely means the OS blocked the packet (permission denied)
         resolve(false);
       }, 3000);
 
@@ -72,11 +80,35 @@ class CollaborationManager {
         resolve(false);
       });
 
-      // Sending to mDNS multicast address triggers macOS Local Network permission
       socket.send(message, 0, message.length, 5353, '224.0.0.251', (err) => {
         clearTimeout(timeout);
         try { socket.close(); } catch (_) { /* ignore */ }
         resolve(!err);
+      });
+    });
+  }
+
+  private checkWindowsFirewall(): Promise<boolean> {
+    return new Promise((resolve) => {
+      // Binding a TCP server on 0.0.0.0 triggers the Windows Firewall prompt
+      // if the app doesn't already have an allow rule.
+      const server = net.createServer();
+      const timeout = setTimeout(() => {
+        try { server.close(); } catch (_) { /* ignore */ }
+        resolve(false);
+      }, 5000);
+
+      server.on('error', () => {
+        clearTimeout(timeout);
+        try { server.close(); } catch (_) { /* ignore */ }
+        resolve(false);
+      });
+
+      // Use port 0 so the OS assigns an ephemeral port
+      server.listen(0, '0.0.0.0', () => {
+        clearTimeout(timeout);
+        try { server.close(); } catch (_) { /* ignore */ }
+        resolve(true);
       });
     });
   }

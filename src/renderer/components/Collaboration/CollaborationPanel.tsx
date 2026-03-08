@@ -78,12 +78,14 @@ export default function CollaborationPanel({
     localStorage.setItem("collaborationUserName", userName);
 
     try {
-      // On macOS, trigger local network permission prompt if needed
+      // Trigger local network / firewall permission prompt if needed
       const networkOk =
         await window.electronAPI.collaboration.checkLocalNetwork();
       if (!networkOk) {
         setError(
-          "Local Network permission is required for collaboration. Please allow it in System Settings → Privacy & Security → Local Network, then try again.",
+          navigator.platform.startsWith("Mac")
+            ? "Local Network permission is required for collaboration. Please allow it in System Settings → Privacy & Security → Local Network, then try again."
+            : "Firewall is blocking network access. Please allow this app through Windows Firewall (Settings → Privacy & Security → Windows Security → Firewall), then try again.",
         );
         setLoading(false);
         return;
@@ -111,12 +113,14 @@ export default function CollaborationPanel({
     localStorage.setItem("collaborationUserName", userName);
 
     try {
-      // On macOS, trigger local network permission prompt if needed
+      // Trigger local network / firewall permission prompt if needed
       const networkOk =
         await window.electronAPI.collaboration.checkLocalNetwork();
       if (!networkOk) {
         setError(
-          "Local Network permission is required for collaboration. Please allow it in System Settings → Privacy & Security → Local Network, then try again.",
+          navigator.platform.startsWith("Mac")
+            ? "Local Network permission is required for collaboration. Please allow it in System Settings → Privacy & Security → Local Network, then try again."
+            : "Firewall is blocking network access. Please allow this app through Windows Firewall (Settings → Privacy & Security → Windows Security → Firewall), then try again.",
         );
         setLoading(false);
         return;
