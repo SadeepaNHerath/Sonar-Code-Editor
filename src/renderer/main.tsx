@@ -1,4 +1,10 @@
-// Worker patch — MUST be the very first import.
+// ── Keyboard shield — MUST be the absolute first import ──
+// Registers a window capture-phase keydown listener that blocks Monaco from
+// swallowing keystrokes aimed at FileTree input fields (rename / create).
+// Must run before monaco-editor is imported so our listener is registered first.
+import './fileTreeKeyShield';
+
+// Worker patch — MUST be the very next import.
 // Patches the Worker constructor to suppress uncaught Worker errors that freeze
 // the UI, and sets MonacoEnvironment.getWorker before monaco-editor loads.
 import './monacoWorkerPatch';

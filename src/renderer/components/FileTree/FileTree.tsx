@@ -19,61 +19,15 @@ import {
   Palette,
 } from "lucide-react";
 import { FileNode } from "../../../shared/types";
+import { fileTreeInputCallbacks } from "../../fileTreeKeyShield";
 import "./FileTree.css";
 
 // Track global mouse interaction to distinguish programmatic focus steals from user clicks
 let isUserClicking = false;
-
-// ── Native keydown shield ─────────────────────────────────────────────
-// Monaco Editor registers global capture-phase keydown listeners that swallow
-// alphabetical keys when it thinks it owns focus (e.g. after a tab closes).
-// React's synthetic onKeyDown / onKeyDownCapture fire AFTER those native
-// capture listeners, so they never see the event.  The only reliable fix is
-// to intercept the event at the very top of the capture chain (window) BEFORE
-// Monaco, kill propagation, and handle Enter / Escape ourselves via a
-// callback registry keyed by the DOM element.
-const fileTreeInputCallbacks = new WeakMap<
-  HTMLElement,
-  { onSubmit: () => void; onCancel: () => void }
->();
-
 if (typeof window !== "undefined") {
   window.addEventListener("mousedown", () => { isUserClicking = true; }, true);
   window.addEventListener("mouseup", () => { isUserClicking = false; }, true);
-
-  // This MUST be the very first capture-phase keydown listener so it runs
-  // before Monaco's.  Because this module is imported early this is guaranteed.
-  window.addEventListener(
-    "keydown",
-    (e) => {
-      isUserClicking = true;
-
-      const target = e.target as HTMLElement | null;
-      if (
-        !target ||
-        target.tagName !== "INPUT" ||
-        !(target.classList.contains("rename-input") || target.classList.contains("inline-create-input"))
-      ) {
-        return; // Not our input – let the event flow normally
-      }
-
-      // Block Monaco (and every other capture listener) from seeing this event
-      e.stopImmediatePropagation();
-
-      const cbs = fileTreeInputCallbacks.get(target);
-      if (e.key === "Enter" && cbs) {
-        e.preventDefault();
-        cbs.onSubmit();
-      } else if (e.key === "Escape" && cbs) {
-        e.preventDefault();
-        cbs.onCancel();
-      }
-      // All other keys (letters, backspace, delete …) just flow into the
-      // <input> via the browser's default behaviour – no further action needed.
-    },
-    true,
-  );
-
+  window.addEventListener("keydown", () => { isUserClicking = true; }, true);
   window.addEventListener("keyup", () => { isUserClicking = false; }, true);
 }
 const isWindows = navigator.userAgent.toLowerCase().includes("win");
@@ -404,6 +358,13 @@ function FileTreeNode({
   const handleDelete = async () => {
     closeContextMenu();
     if (confirm(`Delete "${node.name}"?`)) {
+      // After the synchronous confirm() dialog closes, Monaco may reclaim
+      // keyboard focus.  Force-blur whatever has focus so Monaco releases its
+      // internal keyboard capture; this prevents the "stuck input" bug when the
+      // user subsequently renames/creates a file.
+      if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+      }
       await window.electronAPI.fs.deleteItem(node.path);
       onFileDeleted(node.path, node.type);
       onRefresh();
