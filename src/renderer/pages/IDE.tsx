@@ -520,13 +520,25 @@ function IDEContent() {
               });
               await scanDir(fullPath, entryRelativePath);
             } else {
-              // Skip binary/large files
+              // Skip binary/large files and known non-text formats
               const ext = entry.name.split(".").pop()?.toLowerCase() || "";
               if (IMAGE_EXTENSIONS.has(ext)) continue;
+              // Skip other common binary file extensions
+              const BINARY_EXTENSIONS = new Set([
+                'exe', 'dll', 'so', 'dylib', 'bin', 'dat',
+                'zip', 'tar', 'gz', 'rar', '7z', 'bz2',
+                'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
+                'mp3', 'mp4', 'wav', 'ogg', 'avi', 'mkv', 'mov',
+                'woff', 'woff2', 'ttf', 'otf', 'eot',
+                'sqlite', 'db', 'lock',
+                'class', 'pyc', 'pyo', 'o', 'obj',
+              ]);
+              if (BINARY_EXTENSIONS.has(ext)) continue;
 
               try {
                 const content = await window.electronAPI.fs.readFile(fullPath);
-                // Skip files larger than 1MB
+                // Skip files larger than 1MB or files that appear to be binary
+                // (readFile returns empty string for binary files)
                 if (content.length > 1024 * 1024) continue;
 
                 files.push({
@@ -703,14 +715,18 @@ function IDEContent() {
       });
 
       // Broadcast delete to collaboration peers
-      const wsRoot = workspaceRootRef.current;
-      if (collabActiveRef.current && wsRoot) {
-        const relativePath = toRelativePath(deletedPath, wsRoot);
-        broadcastFileOpRef.current({
-          type: "delete",
-          relativePath,
-          isDirectory: type === "directory",
-        });
+      try {
+        const wsRoot = workspaceRootRef.current;
+        if (collabActiveRef.current && wsRoot) {
+          const relativePath = toRelativePath(deletedPath, wsRoot);
+          broadcastFileOpRef.current({
+            type: "delete",
+            relativePath,
+            isDirectory: type === "directory",
+          });
+        }
+      } catch (err) {
+        console.error('broadcastFileOp delete failed:', err);
       }
     },
     [],
@@ -752,15 +768,19 @@ function IDEContent() {
       });
 
       // Broadcast rename to collaboration peers
-      const wsRoot = workspaceRootRef.current;
-      if (collabActiveRef.current && wsRoot) {
-        const relOld = toRelativePath(oldPath, wsRoot);
-        const relNew = toRelativePath(newPath, wsRoot);
-        broadcastFileOpRef.current({
-          type: "rename",
-          relativePath: relOld,
-          newRelativePath: relNew,
-        });
+      try {
+        const wsRoot = workspaceRootRef.current;
+        if (collabActiveRef.current && wsRoot) {
+          const relOld = toRelativePath(oldPath, wsRoot);
+          const relNew = toRelativePath(newPath, wsRoot);
+          broadcastFileOpRef.current({
+            type: "rename",
+            relativePath: relOld,
+            newRelativePath: relNew,
+          });
+        }
+      } catch (err) {
+        console.error('broadcastFileOp rename failed:', err);
       }
     },
     [],
@@ -773,14 +793,18 @@ function IDEContent() {
           t.path === fullPath ? { ...t, isDeleted: false } : t
         )
       );
-      const wsRoot = workspaceRootRef.current;
-      if (collabActiveRef.current && wsRoot) {
-        const relativePath = toRelativePath(fullPath, wsRoot);
-        broadcastFileOpRef.current({
-          type: "create-file",
-          relativePath,
-          content: "",
-        });
+      try {
+        const wsRoot = workspaceRootRef.current;
+        if (collabActiveRef.current && wsRoot) {
+          const relativePath = toRelativePath(fullPath, wsRoot);
+          broadcastFileOpRef.current({
+            type: "create-file",
+            relativePath,
+            content: "",
+          });
+        }
+      } catch (err) {
+        console.error('broadcastFileOp create-file failed:', err);
       }
     },
     [],
@@ -788,13 +812,17 @@ function IDEContent() {
 
   const handleFolderCreated = useCallback(
     (fullPath: string) => {
-      const wsRoot = workspaceRootRef.current;
-      if (collabActiveRef.current && wsRoot) {
-        const relativePath = toRelativePath(fullPath, wsRoot);
-        broadcastFileOpRef.current({
-          type: "create-folder",
-          relativePath,
-        });
+      try {
+        const wsRoot = workspaceRootRef.current;
+        if (collabActiveRef.current && wsRoot) {
+          const relativePath = toRelativePath(fullPath, wsRoot);
+          broadcastFileOpRef.current({
+            type: "create-folder",
+            relativePath,
+          });
+        }
+      } catch (err) {
+        console.error('broadcastFileOp create-folder failed:', err);
       }
     },
     [],
@@ -818,6 +846,10 @@ function IDEContent() {
         .replace(/^\/+/, "");
 
     const unsub = collaboration.onFileOperation((op: FileOperation) => {
+      // Chain operations sequentially.  CRITICAL: `.catch()` at the end
+      // ensures a failed operation never breaks the promise chain — without
+      // this, one rejected promise would cause ALL subsequent operations to
+      // hang forever (the queue would stay in a rejected state).
       fileOpQueueRef.current = fileOpQueueRef.current.then(async () => {
         const wsRoot = workspaceRootRef.current;
         if (!wsRoot) {
@@ -835,9 +867,13 @@ function IDEContent() {
         try {
           switch (op.type) {
             case "create-file":
-              await window.electronAPI.fs.createFile(fullPath);
-              if (op.content) {
-                await window.electronAPI.fs.writeFile(fullPath, op.content);
+              try {
+                await window.electronAPI.fs.createFile(fullPath);
+                if (op.content) {
+                  await window.electronAPI.fs.writeFile(fullPath, op.content);
+                }
+              } catch (createErr) {
+                console.warn(`Remote create-file failed: ${relPath}`, createErr);
               }
               setTabs((prev) =>
                 prev.map((t) =>
@@ -846,7 +882,11 @@ function IDEContent() {
               );
               break;
             case "create-folder":
-              await window.electronAPI.fs.createFolder(fullPath);
+              try {
+                await window.electronAPI.fs.createFolder(fullPath);
+              } catch (folderErr) {
+                console.warn(`Remote create-folder failed: ${relPath}`, folderErr);
+              }
               break;
             case "delete":
               try {
@@ -926,6 +966,10 @@ function IDEContent() {
         } catch (err) {
           console.error("Failed to apply remote file operation:", op.type, err);
         }
+      }).catch((err) => {
+        // Safety net: if anything escapes the inner try/catch, recover the
+        // queue so future operations aren't permanently blocked.
+        console.error("File operation queue error (recovered):", err);
       });
     });
 

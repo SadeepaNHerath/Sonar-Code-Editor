@@ -280,8 +280,14 @@ function FileTreeNode({
 
   const loadChildren = useCallback(async () => {
     if (node.type === "directory") {
-      const items = await window.electronAPI.fs.readDirectory(node.path);
-      setChildren(items);
+      try {
+        const items = await window.electronAPI.fs.readDirectory(node.path);
+        setChildren(items);
+      } catch (err) {
+        // Directory may have been renamed/deleted by a collaboration peer.
+        // Silently return stale children instead of crashing.
+        console.warn('loadChildren failed (collab race?):', err);
+      }
     }
   }, [node]);
 
@@ -330,22 +336,26 @@ function FileTreeNode({
     // Normalize path separators for cross-platform safety (Windows backslashes)
     const parentNorm = creatingItem.parentPath.replace(/\\/g, "/");
     const fullPath = `${parentNorm}/${name}`;
+    // Clear creating state FIRST so the input is always removed even if the
+    // fs call fails — this prevents the UI from "freezing" with an orphaned
+    // inline input that can never be dismissed.
+    const itemType = creatingItem.type;
+    onSetCreating(null);
     try {
-      if (creatingItem.type === "file") {
+      if (itemType === "file") {
         await window.electronAPI.fs.createFile(fullPath);
-        onSetCreating(null);
         await loadChildren();
         onFileCreated?.(fullPath, name);
         onFileOpened(fullPath, name);
       } else {
         await window.electronAPI.fs.createFolder(fullPath);
-        onSetCreating(null);
         await loadChildren();
         onFolderCreated?.(fullPath);
       }
     } catch (err) {
       console.error("Failed to create item:", err);
-      onSetCreating(null);
+      // Still refresh to show current state
+      await loadChildren().catch(() => {});
     }
   };
 
@@ -378,7 +388,11 @@ function FileTreeNode({
       }
       // Broadcast the rename to collaboration peers even if the tab update
       // below encounters an issue – this is the critical sync step.
-      onFileRenamed?.(node.path, newPath);
+      try {
+        onFileRenamed?.(node.path, newPath);
+      } catch (err) {
+        console.error('broadcastRename failed:', err);
+      }
       onRefresh();
     }
   };
@@ -644,8 +658,13 @@ const FileTree = React.memo(function FileTree({
 
   const loadRoot = useCallback(async () => {
     if (!workspaceRoot) return;
-    const items = await window.electronAPI.fs.readDirectory(workspaceRoot);
-    setRootNodes(items);
+    try {
+      const items = await window.electronAPI.fs.readDirectory(workspaceRoot);
+      setRootNodes(items);
+    } catch (err) {
+      console.warn('loadRoot failed:', err);
+      // Don't clear rootNodes — keep showing stale data so UI isn't blank
+    }
   }, [workspaceRoot]);
 
   useEffect(() => {
@@ -772,22 +791,15 @@ const FileTree = React.memo(function FileTree({
               onSubmit={async (name) => {
                 const rootNorm = workspaceRoot.replace(/\\/g, "/");
                 const fullPath = `${rootNorm}/${name}`;
+                // Clear creating state FIRST to prevent frozen input
+                setCreatingItem(null);
                 try {
-                  if (creatingItem.type === "file") {
-                    await window.electronAPI.fs.createFile(fullPath);
-                    setCreatingItem(null);
-                    loadRoot();
-                    onFileCreated?.(fullPath, name);
-                    onFileOpened?.(fullPath, name);
-                  } else {
-                    await window.electronAPI.fs.createFolder(fullPath);
-                    setCreatingItem(null);
-                    loadRoot();
-                    onFolderCreated?.(fullPath);
-                  }
+                  await window.electronAPI.fs.createFolder(fullPath);
+                  loadRoot();
+                  onFolderCreated?.(fullPath);
                 } catch (err) {
-                  console.error("Failed to create item at root:", err);
-                  setCreatingItem(null);
+                  console.error("Failed to create folder at root:", err);
+                  loadRoot();
                 }
               }}
               onCancel={() => setCreatingItem(null)}
@@ -826,22 +838,16 @@ const FileTree = React.memo(function FileTree({
               onSubmit={async (name) => {
                 const rootNorm = workspaceRoot.replace(/\\/g, "/");
                 const fullPath = `${rootNorm}/${name}`;
+                // Clear creating state FIRST to prevent frozen input
+                setCreatingItem(null);
                 try {
-                  if (creatingItem.type === "file") {
-                    await window.electronAPI.fs.createFile(fullPath);
-                    setCreatingItem(null);
-                    loadRoot();
-                    onFileCreated?.(fullPath, name);
-                    onFileOpened?.(fullPath, name);
-                  } else {
-                    await window.electronAPI.fs.createFolder(fullPath);
-                    setCreatingItem(null);
-                    loadRoot();
-                    onFolderCreated?.(fullPath);
-                  }
+                  await window.electronAPI.fs.createFile(fullPath);
+                  loadRoot();
+                  onFileCreated?.(fullPath, name);
+                  onFileOpened?.(fullPath, name);
                 } catch (err) {
-                  console.error("Failed to create item at root:", err);
-                  setCreatingItem(null);
+                  console.error("Failed to create file at root:", err);
+                  loadRoot();
                 }
               }}
               onCancel={() => setCreatingItem(null)}

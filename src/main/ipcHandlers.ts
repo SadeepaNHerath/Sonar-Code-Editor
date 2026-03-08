@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as fsp from 'fs/promises';
 import * as path from 'path';
 import { execSync } from 'child_process';
 import { IpcMain, Dialog, webContents, BrowserView, BrowserWindow, clipboard, shell } from 'electron';
@@ -6,38 +7,92 @@ import { FileNode } from '../shared/types';
 import { IPC_CHANNELS } from '../shared/constants';
 import { startStaticServer, stopStaticServer, getServerUrl } from './staticServer';
 
+// ── Helpers ────────────────────────────────────────────────────────────────────
+
 function getExtension(filename: string): string {
   const parts = filename.split('.');
   return parts.length > 1 ? parts[parts.length - 1].toLowerCase() : '';
 }
 
+/**
+ * Normalise a path to forward-slashes and collapse repeated separators.
+ * This makes comparisons robust on Windows where paths can arrive as
+ * either "D:/foo" or "D:\\foo".
+ */
+function normPath(p: string): string {
+  return p.replace(/\\/g, '/').replace(/\/{2,}/g, '/').replace(/\/+$/, '');
+}
+
+/**
+ * Validate a file/folder name.
+ * Returns an error string if invalid, or null if OK.
+ */
+function validateName(name: string): string | null {
+  if (!name || !name.trim()) return 'Name cannot be empty';
+  // Reject names with characters that are invalid on Windows and/or could
+  // cause path-traversal issues.
+  if (/[<>:"|?*\x00-\x1f]/.test(name)) return 'Name contains invalid characters';
+  if (name === '.' || name === '..') return 'Invalid name';
+  if (name.length > 255) return 'Name too long (max 255 characters)';
+  return null;
+}
+
+/**
+ * Detect whether a file is likely binary by checking the first 8 KB for
+ * NULL bytes.  Used to decide utf-8 vs raw read.
+ */
+function isBinaryFile(filePath: string): boolean {
+  try {
+    const fd = fs.openSync(filePath, 'r');
+    const buf = Buffer.alloc(8192);
+    const bytesRead = fs.readSync(fd, buf, 0, 8192, 0);
+    fs.closeSync(fd);
+    for (let i = 0; i < bytesRead; i++) {
+      if (buf[i] === 0) return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 function readDirectoryRecursive(dirPath: string, deep = false): FileNode[] {
-  const entries = fs.readdirSync(dirPath, { withFileTypes: true });
-  return entries
-    .filter((e) => !e.name.startsWith('.') && e.name !== 'node_modules')
-    .map((entry) => {
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(dirPath, { withFileTypes: true });
+  } catch {
+    return []; // Directory may have been deleted / inaccessible
+  }
+  const nodes: FileNode[] = [];
+  for (const entry of entries) {
+    if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+    try {
       const fullPath = path.join(dirPath, entry.name);
       if (entry.isDirectory()) {
-        return {
+        nodes.push({
           name: entry.name,
           type: 'directory' as const,
           path: fullPath,
           children: deep ? readDirectoryRecursive(fullPath) : [],
-        };
+        });
       } else {
-        return {
+        nodes.push({
           name: entry.name,
           type: 'file' as const,
           path: fullPath,
           extension: getExtension(entry.name),
-        };
+        });
       }
-    })
-    .sort((a, b) => {
-      if (a.type === 'directory' && b.type === 'file') return -1;
-      if (a.type === 'file' && b.type === 'directory') return 1;
-      return a.name.localeCompare(b.name);
-    });
+    } catch {
+      // Skip entries that vanished between readdir and stat (race with collab)
+    }
+  }
+  nodes.sort((a, b) => {
+    if (a.type === 'directory' && b.type === 'file') return -1;
+    if (a.type === 'file' && b.type === 'directory') return 1;
+    return a.name.localeCompare(b.name);
+  });
+  return nodes;
 }
 
 function searchFilesRecursive(dirPath: string, query: string, results: any[]) {
@@ -50,8 +105,13 @@ function searchFilesRecursive(dirPath: string, query: string, results: any[]) {
         searchFilesRecursive(fullPath, query, results);
       } else {
         const ext = getExtension(entry.name);
-        if (['png', 'jpg', 'jpeg', 'gif', 'bmp', 'svg', 'webp', 'ico'].includes(ext)) continue;
+        if (['png', 'jpg', 'jpeg', 'gif', 'bmp', 'svg', 'webp', 'ico',
+             'exe', 'dll', 'so', 'bin', 'zip', 'tar', 'gz', 'rar',
+             'pdf', 'woff', 'woff2', 'ttf', 'otf', 'mp3', 'mp4', 'wav',
+             'sqlite', 'db', 'lock', 'class', 'pyc'].includes(ext)) continue;
         try {
+          // Skip binary files
+          if (isBinaryFile(fullPath)) continue;
           const content = fs.readFileSync(fullPath, 'utf-8');
           const lines = content.split('\n');
           for (let i = 0; i < lines.length; i++) {
@@ -77,15 +137,25 @@ function searchFilesRecursive(dirPath: string, query: string, results: any[]) {
 export function registerFsHandlers(ipcMain: IpcMain, dialog: Dialog): void {
   ipcMain.handle(IPC_CHANNELS.FS_READ_DIR, async (_event, dirPath: string) => {
     try {
+      if (!dirPath) return [];
+      if (!fs.existsSync(dirPath)) return [];
       return readDirectoryRecursive(dirPath);
     } catch (err) {
-      throw new Error(`Failed to read directory: ${(err as Error).message}`);
+      console.error('FS_READ_DIR error:', err);
+      return []; // Return empty array instead of throwing — prevents caller hangs
     }
   });
 
   ipcMain.handle(IPC_CHANNELS.FS_READ_FILE, async (_event, filePath: string) => {
     try {
-      return fs.readFileSync(filePath, 'utf-8');
+      if (!filePath) throw new Error('No file path provided');
+      if (!fs.existsSync(filePath)) throw new Error(`File not found: ${filePath}`);
+      // Check if file is binary — return empty string for binary files
+      // to avoid garbled UTF-8 data or IPC serialisation issues
+      if (isBinaryFile(filePath)) {
+        return '';
+      }
+      return await fsp.readFile(filePath, 'utf-8');
     } catch (err) {
       throw new Error(`Failed to read file: ${(err as Error).message}`);
     }
@@ -93,7 +163,8 @@ export function registerFsHandlers(ipcMain: IpcMain, dialog: Dialog): void {
 
   ipcMain.handle(IPC_CHANNELS.FS_READ_FILE_BASE64, async (_event, filePath: string) => {
     try {
-      const buffer = fs.readFileSync(filePath);
+      if (!filePath) throw new Error('No file path provided');
+      const buffer = await fsp.readFile(filePath);
       const ext = path.extname(filePath).toLowerCase().slice(1);
       const mimeMap: Record<string, string> = {
         png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
@@ -109,7 +180,13 @@ export function registerFsHandlers(ipcMain: IpcMain, dialog: Dialog): void {
 
   ipcMain.handle(IPC_CHANNELS.FS_WRITE_FILE, async (_event, filePath: string, content: string) => {
     try {
-      fs.writeFileSync(filePath, content, 'utf-8');
+      if (!filePath) throw new Error('No file path provided');
+      // Ensure parent directory exists (collaboration may create files before folders)
+      const parentDir = path.dirname(filePath);
+      if (!fs.existsSync(parentDir)) {
+        await fsp.mkdir(parentDir, { recursive: true });
+      }
+      await fsp.writeFile(filePath, content, 'utf-8');
     } catch (err) {
       throw new Error(`Failed to write file: ${(err as Error).message}`);
     }
@@ -117,12 +194,20 @@ export function registerFsHandlers(ipcMain: IpcMain, dialog: Dialog): void {
 
   ipcMain.handle(IPC_CHANNELS.FS_CREATE_FILE, async (_event, filePath: string) => {
     try {
+      if (!filePath) throw new Error('No file path provided');
+      const fileName = path.basename(filePath);
+      const nameErr = validateName(fileName);
+      if (nameErr) throw new Error(nameErr);
+
       // Ensure parent directory exists (important for cross-platform collaboration sync)
       const parentDir = path.dirname(filePath);
       if (!fs.existsSync(parentDir)) {
-        fs.mkdirSync(parentDir, { recursive: true });
+        await fsp.mkdir(parentDir, { recursive: true });
       }
-      fs.writeFileSync(filePath, '', 'utf-8');
+      // Only write if file doesn't already exist (avoid clobbering during collab race)
+      if (!fs.existsSync(filePath)) {
+        await fsp.writeFile(filePath, '', 'utf-8');
+      }
     } catch (err) {
       throw new Error(`Failed to create file: ${(err as Error).message}`);
     }
@@ -130,19 +215,29 @@ export function registerFsHandlers(ipcMain: IpcMain, dialog: Dialog): void {
 
   ipcMain.handle(IPC_CHANNELS.FS_CREATE_FOLDER, async (_event, folderPath: string) => {
     try {
-      fs.mkdirSync(folderPath, { recursive: true });
+      if (!folderPath) throw new Error('No folder path provided');
+      const folderName = path.basename(folderPath);
+      const nameErr = validateName(folderName);
+      if (nameErr) throw new Error(nameErr);
+
+      await fsp.mkdir(folderPath, { recursive: true });
     } catch (err) {
+      // EEXIST is fine — folder was likely created by a collab peer simultaneously
+      if ((err as NodeJS.ErrnoException).code === 'EEXIST') return;
       throw new Error(`Failed to create folder: ${(err as Error).message}`);
     }
   });
 
   ipcMain.handle(IPC_CHANNELS.FS_DELETE_ITEM, async (_event, itemPath: string) => {
     try {
-      const stat = fs.statSync(itemPath);
+      if (!itemPath) return;
+      // If it doesn't exist, treat as success (idempotent — collab peer may have deleted first)
+      if (!fs.existsSync(itemPath)) return;
+      const stat = await fsp.stat(itemPath);
       if (stat.isDirectory()) {
-        fs.rmSync(itemPath, { recursive: true, force: true });
+        await fsp.rm(itemPath, { recursive: true, force: true });
       } else {
-        fs.unlinkSync(itemPath);
+        await fsp.unlink(itemPath);
       }
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === 'ENOENT') return;
@@ -152,10 +247,23 @@ export function registerFsHandlers(ipcMain: IpcMain, dialog: Dialog): void {
 
   ipcMain.handle(IPC_CHANNELS.FS_RENAME_ITEM, async (_event, oldPath: string, newPath: string) => {
     try {
+      if (!oldPath || !newPath) throw new Error('Missing path for rename');
+
+      // If source doesn't exist, it may have been renamed/deleted by a collab peer.
+      // Treat as success to avoid blocking remote operations.
+      if (!fs.existsSync(oldPath)) {
+        console.warn(`Rename source not found (collab race?): ${oldPath}`);
+        return;
+      }
+
+      const newBase = path.basename(newPath);
+      const nameErr = validateName(newBase);
+      if (nameErr) throw new Error(nameErr);
+
       // Ensure target parent directory exists (important for cross-platform collaboration sync)
       const targetDir = path.dirname(newPath);
       if (!fs.existsSync(targetDir)) {
-        fs.mkdirSync(targetDir, { recursive: true });
+        await fsp.mkdir(targetDir, { recursive: true });
       }
 
       // Detect case-only rename (e.g. File.txt → file.txt).  On case-insensitive
@@ -163,18 +271,22 @@ export function registerFsHandlers(ipcMain: IpcMain, dialog: Dialog): void {
       // may not actually change the on-disk name.  Use a two-step rename via a
       // temporary name to force the change.
       const oldBase = path.basename(oldPath);
-      const newBase = path.basename(newPath);
       const isCaseOnlyRename =
         oldBase !== newBase && oldBase.toLowerCase() === newBase.toLowerCase();
 
       if (isCaseOnlyRename) {
         const tmpPath = oldPath + '.__rename_tmp__';
-        fs.renameSync(oldPath, tmpPath);
-        fs.renameSync(tmpPath, newPath);
+        await fsp.rename(oldPath, tmpPath);
+        await fsp.rename(tmpPath, newPath);
       } else {
-        fs.renameSync(oldPath, newPath);
+        await fsp.rename(oldPath, newPath);
       }
     } catch (err) {
+      // ENOENT during rename is treated as non-fatal (collab race condition)
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        console.warn(`Rename failed (ENOENT, collab race?): ${oldPath} → ${newPath}`);
+        return;
+      }
       throw new Error(`Failed to rename item: ${(err as Error).message}`);
     }
   });
