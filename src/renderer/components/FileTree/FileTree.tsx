@@ -93,45 +93,43 @@ function InlineCreateInput({
   onCancelRef.current = onCancel;
 
   useEffect(() => {
-    // On Windows Electron during collaboration, y-monaco operations
-    // (editor.setSelection, deltaDecorations) can steal focus from this input.
-    // Use setTimeout (more reliable than rAF on Windows) + a short focus-guard
-    // interval that re-claims focus if it's stolen by Monaco within the first
-    // ~1 s after mount.
-    const focusInput = () => inputRef.current?.focus();
-    const timerId = setTimeout(focusInput, 0);
-    // Also use rAF as a second attempt for layout-dependent cases
-    const rafId = requestAnimationFrame(focusInput);
+    // Initial focus with multiple strategies for reliability across platforms
+    const el = inputRef.current;
+    if (el) el.focus();
+    const rafId = requestAnimationFrame(() => inputRef.current?.focus());
 
-    // Focus guard: re-focus if something steals it (e.g. Monaco awareness update)
-    let guardCount = 0;
-    const guardInterval = setInterval(() => {
-      guardCount++;
-      if (guardCount > 10) {
-        clearInterval(guardInterval);
-        return;
-      }
-      if (
-        inputRef.current &&
-        document.activeElement !== inputRef.current &&
-        !submittedRef.current
-      ) {
-        // Only re-focus if focus went to a Monaco element or body (stolen focus)
-        const active = document.activeElement;
-        const isMonacoOrBody =
-          !active ||
-          active === document.body ||
-          active.closest('.monaco-editor') !== null;
-        if (isMonacoOrBody) {
-          inputRef.current.focus();
+    // Focus trap: during collaboration, y-monaco operations (applyEdits,
+    // setSelection, deltaDecorations) can programmatically move focus to
+    // Monaco's hidden textarea on Windows Electron.  A capture-phase
+    // 'focus' listener fires *synchronously* when any element gains focus,
+    // so we can redirect it back to the input before the next keystroke
+    // is processed — unlike the old polling approach there is zero delay.
+    const handleFocusCapture = (e: FocusEvent) => {
+      if (submittedRef.current || !inputRef.current) return;
+      if (e.target === inputRef.current) return;
+
+      const target = e.target as Element | null;
+      const isMonacoOrBody =
+        !target ||
+        target === document.body ||
+        target.closest('.monaco-editor') !== null;
+
+      if (isMonacoOrBody) {
+        // Clear any pending blur timeout — we're about to restore focus
+        if (blurTimeoutRef.current) {
+          clearTimeout(blurTimeoutRef.current);
+          blurTimeoutRef.current = null;
         }
+        inputRef.current.focus();
       }
-    }, 100);
+    };
+
+    // Capture phase so we intercept before Monaco processes the event
+    document.addEventListener('focus', handleFocusCapture, true);
 
     return () => {
-      clearTimeout(timerId);
       cancelAnimationFrame(rafId);
-      clearInterval(guardInterval);
+      document.removeEventListener('focus', handleFocusCapture, true);
     };
   }, []);
 
@@ -160,10 +158,10 @@ function InlineCreateInput({
     // input alive.
     if (blurTimeoutRef.current) clearTimeout(blurTimeoutRef.current);
     blurTimeoutRef.current = setTimeout(() => {
-      // Focus came back (React reconciliation restored it) — do nothing.
+      // Focus came back (React reconciliation or focus trap restored it) — do nothing.
       if (document.activeElement === inputRef.current) return;
       handleSubmit();
-    }, 180);
+    }, 300);
   }, [handleSubmit]);
 
   const handleFocus = useCallback(() => {

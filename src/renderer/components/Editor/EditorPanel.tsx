@@ -121,7 +121,7 @@ function getTabIcon(tab: OpenTab) {
   }
 }
 
-export default function EditorPanel({
+const EditorPanel = React.memo(function EditorPanel({
   tabs,
   activeTabPath,
   onTabClick,
@@ -500,4 +500,6 @@ export default function EditorPanel({
       })}
     </div>
   );
-}
+});
+
+export default EditorPanel;
