@@ -651,13 +651,72 @@ function IDEContent() {
               } catch {
                 // File may already be gone (e.g. after a failed rename); treat as success
               }
-              handleFileDeleted(fullPath, op.isDirectory ? "directory" : "file");
+              // Update tabs locally WITHOUT calling handleFileDeleted (which would
+              // re-broadcast the op and create an infinite echo loop)
+              setTabs((prev) => {
+                const next = prev.filter((t) => {
+                  if (op.isDirectory) {
+                    return (
+                      !t.path.startsWith(fullPath + "/") &&
+                      !t.path.startsWith(fullPath + "\\") &&
+                      t.path !== fullPath
+                    );
+                  }
+                  return t.path !== fullPath;
+                });
+                if (next.length < prev.length) {
+                  setActiveTabPath((current) => {
+                    if (!current) return null;
+                    const stillOpen = next.find((t) => t.path === current);
+                    if (stillOpen) return current;
+                    return next[next.length - 1]?.path || null;
+                  });
+                }
+                return next;
+              });
               break;
             case "rename": {
               const newRelPath = sanitizeRelPath(op.newRelativePath || "");
               const newFullPath = `${normRoot}/${newRelPath}`;
-              await window.electronAPI.fs.renameItem(fullPath, newFullPath);
-              handleFileRenamed(fullPath, newFullPath);
+              try {
+                await window.electronAPI.fs.renameItem(fullPath, newFullPath);
+              } catch {
+                // Old path may not exist if already renamed/moved; ignore
+              }
+              // Update tabs locally WITHOUT calling handleFileRenamed (which would
+              // re-broadcast the op and create an infinite echo loop)
+              setTabs((prev) => {
+                let updated = false;
+                const next = prev.map((t) => {
+                  if (
+                    t.path === fullPath ||
+                    t.path.startsWith(fullPath + "/") ||
+                    t.path.startsWith(fullPath + "\\")
+                  ) {
+                    updated = true;
+                    const newFilePath =
+                      newFullPath + t.path.slice(fullPath.length);
+                    const newName =
+                      newFilePath.split(/[\\/]/).pop() || "";
+                    return { ...t, path: newFilePath, name: newName };
+                  }
+                  return t;
+                });
+                if (updated) {
+                  setActiveTabPath((current) => {
+                    if (!current) return null;
+                    if (
+                      current === fullPath ||
+                      current.startsWith(fullPath + "/") ||
+                      current.startsWith(fullPath + "\\")
+                    ) {
+                      return newFullPath + current.slice(fullPath.length);
+                    }
+                    return current;
+                  });
+                }
+                return next;
+              });
               break;
             }
           }
@@ -669,7 +728,7 @@ function IDEContent() {
     });
 
     return unsub;
-  }, [collaboration, workspaceRoot, handleFileDeleted, handleFileRenamed]);
+  }, [collaboration, workspaceRoot]);
 
   const openFolder = useCallback(async () => {
     const result = await window.electronAPI.fs.openFolderDialog();
