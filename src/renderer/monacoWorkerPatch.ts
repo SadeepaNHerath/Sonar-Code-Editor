@@ -53,6 +53,12 @@ class PatchedWorker extends NativeWorker {
 // path bypasses this (e.g. the webWorkerFactory.js ESM fallback), the
 // Worker constructor patch above still catches the error.
 
+import editorWorkerUrl from "monaco-editor/esm/vs/editor/editor.worker?url";
+import jsonWorkerUrl from "monaco-editor/esm/vs/language/json/json.worker?url";
+import cssWorkerUrl from "monaco-editor/esm/vs/language/css/css.worker?url";
+import htmlWorkerUrl from "monaco-editor/esm/vs/language/html/html.worker?url";
+import tsWorkerUrl from "monaco-editor/esm/vs/language/typescript/ts.worker?url";
+
 const IS_DEV =
   typeof location !== "undefined" && location.protocol.startsWith("http");
 
@@ -84,17 +90,17 @@ self.MonacoEnvironment = {
     if (IS_DEV) {
       // In dev mode, try to use real workers via Vite dev server
       const WORKER_PATHS: Record<string, string> = {
-        json: "/node_modules/monaco-editor/esm/vs/language/json/json.worker.js",
-        css: "/node_modules/monaco-editor/esm/vs/language/css/css.worker.js",
-        scss: "/node_modules/monaco-editor/esm/vs/language/css/css.worker.js",
-        less: "/node_modules/monaco-editor/esm/vs/language/css/css.worker.js",
-        html: "/node_modules/monaco-editor/esm/vs/language/html/html.worker.js",
-        handlebars: "/node_modules/monaco-editor/esm/vs/language/html/html.worker.js",
-        razor: "/node_modules/monaco-editor/esm/vs/language/html/html.worker.js",
-        typescript: "/node_modules/monaco-editor/esm/vs/language/typescript/ts.worker.js",
-        javascript: "/node_modules/monaco-editor/esm/vs/language/typescript/ts.worker.js",
+        json: jsonWorkerUrl,
+        css: cssWorkerUrl,
+        scss: cssWorkerUrl,
+        less: cssWorkerUrl,
+        html: htmlWorkerUrl,
+        handlebars: htmlWorkerUrl,
+        razor: htmlWorkerUrl,
+        typescript: tsWorkerUrl,
+        javascript: tsWorkerUrl,
       };
-      const DEFAULT = "/node_modules/monaco-editor/esm/vs/editor/editor.worker.js";
+      const DEFAULT = editorWorkerUrl;
 
       const workerUrl = new URL(
         WORKER_PATHS[label] || DEFAULT,

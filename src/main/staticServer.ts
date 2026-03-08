@@ -76,7 +76,7 @@ export async function startStaticServer(rootDir: string): Promise<number> {
     server = http.createServer((req, res) => {
       // Only allow GET/HEAD
       if (req.method !== 'GET' && req.method !== 'HEAD') {
-        res.writeHead(405);
+        res.writeHead(405, { 'Content-Type': 'text/plain' });
         res.end('Method Not Allowed');
         return;
       }
@@ -91,7 +91,7 @@ export async function startStaticServer(rootDir: string): Promise<number> {
       const resolvedPath = path.resolve(filePath);
       const resolvedRoot = path.resolve(rootDir);
       if (!resolvedPath.startsWith(resolvedRoot)) {
-        res.writeHead(403);
+        res.writeHead(403, { 'Content-Type': 'text/plain' });
         res.end('Forbidden');
         return;
       }
@@ -111,13 +111,13 @@ export async function startStaticServer(rootDir: string): Promise<number> {
             }
           }
           if (!found) {
-            res.writeHead(404);
+            res.writeHead(404, { 'Content-Type': 'text/plain' });
             res.end('No index file found');
             return;
           }
         }
       } catch {
-        res.writeHead(404);
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
         res.end('Not Found');
         return;
       }
@@ -134,7 +134,7 @@ export async function startStaticServer(rootDir: string): Promise<number> {
         });
         res.end(content);
       } catch {
-        res.writeHead(500);
+        res.writeHead(500, { 'Content-Type': 'text/plain' });
         res.end('Internal Server Error');
       }
     });
