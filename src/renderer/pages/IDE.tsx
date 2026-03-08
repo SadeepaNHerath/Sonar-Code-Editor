@@ -241,39 +241,30 @@ function IDEContent() {
           `(${metadata.files.length} files)`,
         );
 
-        // Check if workspace already exists locally at same path
-        try {
-          await window.electronAPI.fs.readDirectory(metadata.hostPath);
-          // Path exists, just use it
-          setWorkspaceRoot(metadata.hostPath);
-          console.log("Using existing workspace at:", metadata.hostPath);
-          return;
-        } catch {
-          // Path doesn't exist, need to create it
-        }
-
-        // Ask user where to save the workspace
-        const selectedFolder = await window.electronAPI.fs.openFolderDialog();
-        if (!selectedFolder) {
-          console.log("User cancelled workspace download");
-          return;
-        }
-
-        // Create the workspace folder
-        const targetPath = `${selectedFolder.path}/${metadata.folderName}`;
-        console.log("Creating workspace at:", targetPath);
-
-        try {
-          await window.electronAPI.fs.createFolder(targetPath);
-
-          // Create all files and folders
+        /**
+         * Synchronise the local workspace so it mirrors the host exactly.
+         * This handles three cases:
+         *  a) folder already exists at hostPath  → sync in-place
+         *  b) folder doesn't exist at hostPath   → ask user where to put it, then create+sync
+         */
+        const syncWorkspaceTo = async (targetPath: string) => {
+          // Build a set of relative paths the host has (normalised to /)
+          const hostRelPaths = new Set<string>();
           for (const file of metadata.files) {
-            // Normalize relativePath separators from host OS to current OS
+            hostRelPaths.add(file.relativePath.replace(/\\/g, "/"));
+          }
+
+          // --- Create / overwrite files from host ---
+          for (const file of metadata.files) {
             const normalizedRelPath = file.relativePath.replace(/\\/g, "/");
             const filePath = `${targetPath}/${normalizedRelPath}`;
 
             if (file.isDirectory) {
-              await window.electronAPI.fs.createFolder(filePath);
+              try {
+                await window.electronAPI.fs.createFolder(filePath);
+              } catch {
+                // Folder may already exist
+              }
             } else {
               // Ensure parent directory exists
               const parentDir = filePath.substring(
@@ -289,12 +280,92 @@ function IDEContent() {
             }
           }
 
-          console.log(`Created workspace with ${metadata.files.length} files`);
+          // --- Remove local files/folders that the host does NOT have ---
+          // This prevents stale extra files from causing sync mismatches.
+          const removeExtras = async (
+            dirPath: string,
+            relPrefix: string,
+          ) => {
+            let entries: { name: string; type: string }[];
+            try {
+              entries = await window.electronAPI.fs.readDirectory(dirPath);
+            } catch {
+              return;
+            }
+            for (const entry of entries) {
+              if (
+                entry.name.startsWith(".") ||
+                entry.name === "node_modules" ||
+                entry.name === "dist" ||
+                entry.name === "build" ||
+                entry.name === ".git"
+              ) {
+                continue;
+              }
+              const entryRel = relPrefix
+                ? `${relPrefix}/${entry.name}`
+                : entry.name;
+              const entryFull = `${dirPath}/${entry.name}`;
+
+              if (entry.type === "directory") {
+                if (!hostRelPaths.has(entryRel)) {
+                  // Host doesn't have this directory at all — delete it
+                  try {
+                    await window.electronAPI.fs.deleteItem(entryFull);
+                  } catch {
+                    // ignore
+                  }
+                } else {
+                  // Recurse into sub-directory
+                  await removeExtras(entryFull, entryRel);
+                }
+              } else {
+                if (!hostRelPaths.has(entryRel)) {
+                  try {
+                    await window.electronAPI.fs.deleteItem(entryFull);
+                  } catch {
+                    // ignore
+                  }
+                }
+              }
+            }
+          };
+
+          await removeExtras(targetPath, "");
+          console.log(
+            `Synced workspace "${metadata.folderName}" — ${metadata.files.length} host files`,
+          );
+        };
+
+        // Check if workspace already exists locally at same path
+        let targetPath: string;
+        try {
+          await window.electronAPI.fs.readDirectory(metadata.hostPath);
+          // Path exists — sync files in-place so local matches host exactly
+          targetPath = metadata.hostPath;
+        } catch {
+          // Path doesn't exist — ask user where to save
+          const selectedFolder =
+            await window.electronAPI.fs.openFolderDialog();
+          if (!selectedFolder) {
+            console.log("User cancelled workspace download");
+            return;
+          }
+          targetPath = `${selectedFolder.path}/${metadata.folderName}`;
+          try {
+            await window.electronAPI.fs.createFolder(targetPath);
+          } catch {
+            // May already exist
+          }
+        }
+
+        try {
+          await syncWorkspaceTo(targetPath);
           setWorkspaceRoot(targetPath);
         } catch (err) {
-          console.error("Failed to create workspace:", err);
+          console.error("Failed to sync workspace:", err);
           window.electronAPI.dialog.showError(
-            `Failed to create workspace: ${err}`,
+            `Failed to sync workspace: ${err}`,
           );
         }
       },
